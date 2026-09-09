@@ -385,6 +385,8 @@ function home() {
 function createRoom() {
   stopRefresh();
 
+  const firstQuestion = randomQuestion();
+
   app.innerHTML = `
     <div class="wrap">
 
@@ -411,12 +413,22 @@ function createRoom() {
           id="customQuestion"
           class="input"
           maxlength="100"
-          placeholder="空欄ならランダムで決定"
+          value="${esc(firstQuestion)}"
+          placeholder="お題を入力"
         >
 
+        <button
+          type="button"
+          class="btn secondary full"
+          onclick="redrawRandomQuestion()"
+          style="margin-top:10px"
+        >
+          🎲 お題を引き直す
+        </button>
+
         <div class="notice">
-          お題を入力しない場合は、
-          ランダムでお題が選ばれます。
+          ランダムお題は何回でも引き直せます。
+          自分で好きなお題に書き換えてもOKです。
         </div>
 
         <div class="label">
@@ -463,6 +475,35 @@ function createRoom() {
 
     </div>
   `;
+}
+
+function redrawRandomQuestion() {
+  const input =
+    document.getElementById("customQuestion");
+
+  if (!input) {
+    return;
+  }
+
+  let nextQuestion = randomQuestion();
+
+  /*
+    同じお題を連続で引きにくくする
+  */
+  if (
+    QUESTIONS.length > 1 &&
+    nextQuestion === input.value
+  ) {
+    while (
+      nextQuestion === input.value
+    ) {
+      nextQuestion = randomQuestion();
+    }
+  }
+
+  input.value = nextQuestion;
+
+  input.focus();
 }
 
 function joinRoom() {
@@ -606,8 +647,8 @@ function answeringScreen(
         </div>
 
         <div class="notice">
-          回答受付中から好きな回答に👍できます。
-          総👍数は結果発表まで非公開です。
+           好きな回答に👍できます。
+           同じ回答には1人10回まで👍できます。
         </div>
 
         <input
@@ -1002,6 +1043,16 @@ async function create() {
       ).value
     );
 
+  if (!customQuestion) {
+    err.innerHTML = `
+      <div class="error">
+        お題を入力してください。
+      </div>
+    `;
+
+    return;
+  }
+
   state.loading = true;
 
   button.disabled = true;
@@ -1018,8 +1069,7 @@ async function create() {
           body:
             JSON.stringify({
               question:
-                customQuestion ||
-                randomQuestion(),
+                customQuestion,
 
               durationSeconds,
               maxAnswers
@@ -1169,10 +1219,7 @@ async function submitAnswer() {
       "err"
     );
 
-  if (
-    !input ||
-    !err
-  ) {
+  if (!input || !err) {
     return;
   }
 
@@ -1227,12 +1274,9 @@ async function submitAnswer() {
   }
 }
 
-async function castVote(
-  answerId
-) {
+async function castVote(answerId) {
   if (
-    state.phase ===
-      "finished" ||
+    state.phase === "finished" ||
     state.votingAnswerId
   ) {
     return;
@@ -1419,8 +1463,7 @@ async function endAnsweringEarly() {
   if (
     !state.room ||
     !state.me ||
-    state.phase !==
-      "answering"
+    state.phase !== "answering"
   ) {
     return;
   }
@@ -1441,10 +1484,7 @@ async function endAnsweringEarly() {
       "回答受付を終了して投票タイムに移りますか？"
     );
 
-  if (
-    !ok ||
-    state.loading
-  ) {
+  if (!ok || state.loading) {
     return;
   }
 
@@ -1493,8 +1533,7 @@ async function endVotingEarly() {
   if (
     !state.room ||
     !state.me ||
-    state.phase !==
-      "voting"
+    state.phase !== "voting"
   ) {
     return;
   }
@@ -1515,10 +1554,7 @@ async function endVotingEarly() {
       "投票を終了して結果発表に移りますか？"
     );
 
-  if (
-    !ok ||
-    state.loading
-  ) {
+  if (!ok || state.loading) {
     return;
   }
 
@@ -1593,8 +1629,7 @@ function tickAnswering() {
   if (
     !el ||
     !state.room ||
-    state.phase !==
-      "answering"
+    state.phase !== "answering"
   ) {
     return;
   }
@@ -1633,8 +1668,7 @@ function tickVoting() {
 
   if (
     !el ||
-    state.phase !==
-      "voting"
+    state.phase !== "voting"
   ) {
     return;
   }
