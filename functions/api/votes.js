@@ -1,175 +1,277 @@
-// functions/api/votes.js
+const MAX_VOTES_PER_ANSWER = 10;
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
     headers: {
-      "Content-Type": "application/json; charset=utf-8",
-    },
+      "Content-Type": "application/json; charset=utf-8"
+    }
   });
+
+async function getVotingPhase(DB, roomId) {
+  return await DB.prepare(`
+    SELECT
+      room_id,
+      started_at,
+      deadline
+    FROM voting_phases
+    WHERE room_id = ?
+  `)
+    .bind(roomId)
+    .first();
+}
 
 export async function onRequestGet(context) {
   try {
     const url = new URL(context.request.url);
 
-    const roomId = url.searchParams.get("roomId");
-    const playerId = url.searchParams.get("playerId");
+    const roomId =
+      String(url.searchParams.get("roomId") || "").trim();
+
+    const playerId =
+      String(url.searchParams.get("playerId") || "").trim();
 
     if (!roomId || !playerId) {
-      return json({ error: "roomIdとplayerIdが必要です。" }, 400);
+      return json(
+        { error: "投票情報が不足しています。" },
+        400
+      );
     }
 
-    const vote = await context.env.DB.prepare(`
-      SELECT
-        id,
-        answer_id,
-        created_at
-      FROM votes
-      WHERE room_id = ?
-        AND player_id = ?
-    `)
-      .bind(roomId, playerId)
-      .first();
+    const votingPhase =
+      await getVotingPhase(
+        context.env.DB,
+        roomId
+      );
+
+    const now = Date.now();
+
+    let phase = "answering";
+
+    if (votingPhase) {
+      phase =
+        now >= Number(votingPhase.deadline)
+          ? "finished"
+          : "voting";
+    }
+
+    const votes =
+      await context.env.DB.prepare(`
+        SELECT
+          answer_id,
+          COUNT(*) AS count
+        FROM votes
+        WHERE
+          room_id = ?
+          AND player_id = ?
+        GROUP BY answer_id
+      `)
+        .bind(
+          roomId,
+          playerId
+        )
+        .all();
+
+    const myVotes = {};
+
+    for (const row of votes.results || []) {
+      myVotes[row.answer_id] =
+        Number(row.count || 0);
+    }
 
     return json({
-      vote: vote || null,
+      phase,
+      votingDeadline:
+        votingPhase
+          ? Number(votingPhase.deadline)
+          : null,
+      myVotes
     });
+
   } catch (error) {
     console.error(error);
-    return json({ error: "投票情報の取得に失敗しました。" }, 500);
+
+    return json(
+      { error: "投票情報の取得に失敗しました。" },
+      500
+    );
   }
 }
 
 export async function onRequestPost(context) {
   try {
-    const body = await context.request.json();
+    const body =
+      await context.request.json();
 
-    const roomId = String(body.roomId || "");
-    const answerId = String(body.answerId || "");
-    const playerId = String(body.playerId || "");
+    const roomId =
+      String(body.roomId || "").trim();
 
-    if (!roomId || !answerId || !playerId) {
-      return json({ error: "投票情報が不足しています。" }, 400);
-    }
+    const answerId =
+      String(body.answerId || "").trim();
 
-    const room = await context.env.DB.prepare(`
-      SELECT id, deadline
-      FROM rooms
-      WHERE id = ?
-    `)
-      .bind(roomId)
-      .first();
+    const playerId =
+      String(body.playerId || "").trim();
 
-    if (!room) {
-      return json({ error: "ルームが見つかりません。" }, 404);
-    }
-
-    if (Date.now() >= room.deadline) {
-      return json({ error: "投票受付は終了しています。" }, 403);
-    }
-
-    const voter = await context.env.DB.prepare(`
-      SELECT id
-      FROM players
-      WHERE id = ?
-        AND room_id = ?
-    `)
-      .bind(playerId, roomId)
-      .first();
-
-    if (!voter) {
-      return json({ error: "参加者情報が正しくありません。" }, 403);
-    }
-
-    const answer = await context.env.DB.prepare(`
-      SELECT
-        id,
-        player_id
-      FROM answers
-      WHERE id = ?
-        AND room_id = ?
-    `)
-      .bind(answerId, roomId)
-      .first();
-
-    if (!answer) {
-      return json({ error: "回答が見つかりません。" }, 404);
-    }
-
-    if (answer.player_id === playerId) {
-      return json({ error: "自分の回答には投票できません。" }, 403);
-    }
-
-    const alreadyVoted = await context.env.DB.prepare(`
-      SELECT id, answer_id
-      FROM votes
-      WHERE room_id = ?
-        AND player_id = ?
-    `)
-      .bind(roomId, playerId)
-      .first();
-
-    if (alreadyVoted) {
+    if (
+      !roomId ||
+      !answerId ||
+      !playerId
+    ) {
       return json(
-        {
-          error: "投票できるのは1人1票までです。",
-          answerId: alreadyVoted.answer_id,
-        },
-        409
+        { error: "投票情報が不足しています。" },
+        400
       );
     }
 
-    const id = crypto.randomUUID();
-    const now = Date.now();
+    const votingPhase =
+      await getVotingPhase(
+        context.env.DB,
+        roomId
+      );
 
-    try {
+    if (!votingPhase) {
+      return json(
+        { error: "まだ投票タイムではありません。" },
+        400
+      );
+    }
+
+    if (
+      Date.now() >=
+      Number(votingPhase.deadline)
+    ) {
+      return json(
+        { error: "投票時間は終了しています。" },
+        400
+      );
+    }
+
+    const player =
       await context.env.DB.prepare(`
-        INSERT INTO votes (
-          id,
-          room_id,
-          answer_id,
-          player_id,
-          created_at
-        )
-        VALUES (?, ?, ?, ?, ?)
+        SELECT id
+        FROM players
+        WHERE
+          id = ?
+          AND room_id = ?
       `)
         .bind(
-          id,
-          roomId,
-          answerId,
           playerId,
-          now
+          roomId
         )
-        .run();
-    } catch (error) {
-      if (
-        String(error).includes("UNIQUE") ||
-        String(error).includes("unique")
-      ) {
-        return json(
-          { error: "投票できるのは1人1票までです。" },
-          409
-        );
-      }
+        .first();
 
-      throw error;
+    if (!player) {
+      return json(
+        { error: "参加者情報が見つかりません。" },
+        403
+      );
     }
+
+    const answer =
+      await context.env.DB.prepare(`
+        SELECT
+          id,
+          player_id
+        FROM answers
+        WHERE
+          id = ?
+          AND room_id = ?
+      `)
+        .bind(
+          answerId,
+          roomId
+        )
+        .first();
+
+    if (!answer) {
+      return json(
+        { error: "回答が見つかりません。" },
+        404
+      );
+    }
+
+    if (
+      answer.player_id === playerId
+    ) {
+      return json(
+        { error: "自分の回答には投票できません。" },
+        400
+      );
+    }
+
+    const voteCount =
+      await context.env.DB.prepare(`
+        SELECT
+          COUNT(*) AS count
+        FROM votes
+        WHERE
+          room_id = ?
+          AND player_id = ?
+          AND answer_id = ?
+      `)
+        .bind(
+          roomId,
+          playerId,
+          answerId
+        )
+        .first();
+
+    const currentVotes =
+      Number(
+        voteCount?.count || 0
+      );
+
+    if (
+      currentVotes >=
+      MAX_VOTES_PER_ANSWER
+    ) {
+      return json(
+        {
+          error:
+            `同じ回答には1人${MAX_VOTES_PER_ANSWER}票までです。`
+        },
+        400
+      );
+    }
+
+    const voteId =
+      crypto.randomUUID();
+
+    await context.env.DB.prepare(`
+      INSERT INTO votes (
+        id,
+        room_id,
+        answer_id,
+        player_id,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `)
+      .bind(
+        voteId,
+        roomId,
+        answerId,
+        playerId,
+        Date.now()
+      )
+      .run();
 
     return json(
       {
         success: true,
-        vote: {
-          id,
-          room_id: roomId,
-          answer_id: answerId,
-          player_id: playerId,
-          created_at: now,
-        },
+        answerId,
+        myVoteCount:
+          currentVotes + 1
       },
       201
     );
+
   } catch (error) {
     console.error(error);
-    return json({ error: "投票に失敗しました。" }, 500);
+
+    return json(
+      { error: "投票に失敗しました。" },
+      500
+    );
   }
 }

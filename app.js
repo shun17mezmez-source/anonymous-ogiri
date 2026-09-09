@@ -99,8 +99,30 @@ const QUESTIONS = [
   "ニュース速報で流すほどではないニュース",
   "歴史の教科書に載せるほどではない出来事",
   "国民全員が困惑した新しい法律",
-  "総理大臣が記者会見で絶対に言ってはいけない一言",
-  "世界一しょうもない国際問題とは？"
+  "世界一しょうもない国際問題とは？",
+  "絶対に行きたくない温泉旅館のサービス",
+  "このレストラン、注文する前に帰りたい。なぜ？",
+  "100万円もらってもやりたくないアルバイト",
+  "絶対に流行らない新スポーツとは？",
+  "世界一静かなライブで起きたこと",
+  "こんな電車はすぐ降りたい",
+  "絶対に使いたくないカーナビの案内",
+  "この空港、何かがおかしい。なぜ？",
+  "世界一頼りない警察官の一言",
+  "新入社員が初日に会社を伝説にした理由",
+  "絶対に買いたくない福袋の中身",
+  "サンタクロースが今年だけ来なかった理由",
+  "世界一夢のない宝くじの1等賞品",
+  "無人島にコンビニができた。最初に売れたものは？",
+  "学校の七不思議に追加されたしょうもない8つ目",
+  "絶対に参加したくない運動会の新種目",
+  "修学旅行が開始10分で中止になった理由",
+  "卒業式で校長が放った衝撃の一言",
+  "こんな給食は嫌だ",
+  "テストに出たら先生を疑う問題とは？",
+  "世界一意味のない宿題とは？",
+  "絶対に受けたくないオンライン授業",
+  "新しい教科『○○』何を勉強する？"
 ];
 
 const state = {
@@ -108,9 +130,12 @@ const state = {
   room: null,
   me: null,
   answers: [],
-  myVote: null,
+  myVotes: {},
+  phase: "answering",
+  votingDeadline: null,
   loading: false,
-  refreshTimer: null
+  refreshTimer: null,
+  tickTimer: null
 };
 
 const app = document.querySelector("#app");
@@ -129,50 +154,85 @@ const esc = (s) =>
   );
 
 const randomQuestion = () =>
-  QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
+  QUESTIONS[
+    Math.floor(
+      Math.random() *
+        QUESTIONS.length
+    )
+  ];
 
 const fmt = (ms) => {
-  let s = Math.max(0, Math.ceil(ms / 1000));
+  let s = Math.max(
+    0,
+    Math.ceil(ms / 1000)
+  );
 
-  const d = Math.floor(s / 86400);
+  const d =
+    Math.floor(s / 86400);
+
   s %= 86400;
 
-  const h = Math.floor(s / 3600);
+  const h =
+    Math.floor(s / 3600);
+
   s %= 3600;
 
-  const m = Math.floor(s / 60);
-  const r = s % 60;
+  const m =
+    Math.floor(s / 60);
+
+  const r =
+    s % 60;
 
   if (d > 0) {
-    return `${d}日 ${String(h).padStart(2, "0")}:${String(m).padStart(
+    return `${d}日 ${String(h).padStart(
+      2,
+      "0"
+    )}:${String(m).padStart(
       2,
       "0"
     )}`;
   }
 
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(
+  return `${String(h).padStart(
     2,
     "0"
-  )}:${String(r).padStart(2, "0")}`;
+  )}:${String(m).padStart(
+    2,
+    "0"
+  )}:${String(r).padStart(
+    2,
+    "0"
+  )}`;
 };
 
-async function api(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    }
-  });
+async function api(
+  url,
+  options = {}
+) {
+  const response =
+    await fetch(url, {
+      ...options,
+
+      headers: {
+        "Content-Type":
+          "application/json",
+
+        ...(options.headers || {})
+      }
+    });
 
   let data = {};
 
   try {
-    data = await response.json();
+    data =
+      await response.json();
   } catch {}
 
   if (!response.ok) {
-    throw new Error(data.error || "通信に失敗しました。");
+    throw new Error(
+      data.error ||
+        "通信に失敗しました。"
+    );
   }
 
   return data;
@@ -189,70 +249,126 @@ function saveSession() {
 }
 
 function clearSession() {
-  localStorage.removeItem("anonymousOgiriSession");
+  localStorage.removeItem(
+    "anonymousOgiriSession"
+  );
 }
 
 function loadSession() {
   try {
-    const raw = localStorage.getItem("anonymousOgiriSession");
+    const raw =
+      localStorage.getItem(
+        "anonymousOgiriSession"
+      );
 
     if (!raw) {
       return false;
     }
 
-    const data = JSON.parse(raw);
+    const data =
+      JSON.parse(raw);
 
-    if (!data.room?.code || !data.me?.id) {
+    if (
+      !data.room?.code ||
+      !data.me?.id
+    ) {
       return false;
     }
 
-    state.room = data.room;
-    state.me = data.me;
+    state.room =
+      data.room;
+
+    state.me =
+      data.me;
 
     return true;
+
   } catch {
     return false;
   }
 }
 
 function stopRefresh() {
-  if (state.refreshTimer) {
-    clearInterval(state.refreshTimer);
-    state.refreshTimer = null;
+  if (
+    state.refreshTimer
+  ) {
+    clearInterval(
+      state.refreshTimer
+    );
+
+    state.refreshTimer =
+      null;
   }
 }
 
 function startRefresh() {
   stopRefresh();
 
-  state.refreshTimer = setInterval(() => {
-    if (state.screen === "game") {
-      refreshGame(false);
-    }
-  }, 3000);
+  state.refreshTimer =
+    setInterval(() => {
+      if (
+        state.screen ===
+        "game"
+      ) {
+        refreshGame(false);
+      }
+    }, 3000);
+}
+
+function stopTick() {
+  if (state.tickTimer) {
+    clearTimeout(
+      state.tickTimer
+    );
+
+    state.tickTimer =
+      null;
+  }
 }
 
 function go(screen) {
   stopRefresh();
-  state.screen = screen;
+  stopTick();
+
+  state.screen =
+    screen;
+
   render();
 }
 
 function render() {
-  if (state.screen === "home") {
+  stopTick();
+
+  if (
+    state.screen === "home"
+  ) {
     home();
-  } else if (state.screen === "create") {
+
+  } else if (
+    state.screen === "create"
+  ) {
     createRoom();
-  } else if (state.screen === "join") {
+
+  } else if (
+    state.screen === "join"
+  ) {
     joinRoom();
-  } else if (state.screen === "game") {
+
+  } else if (
+    state.screen === "game"
+  ) {
     game();
-  } else if (state.screen === "result") {
+
+  } else if (
+    state.screen === "result"
+  ) {
     result();
   }
 }
 
 function home() {
+  stopRefresh();
+
   app.innerHTML = `
     <div class="wrap">
 
@@ -263,7 +379,8 @@ function home() {
         </div>
 
         <p class="sub">
-          匿名で答えて、みんなの1票を勝ち取ろう。
+          匿名で答えて、
+          みんなの👍を勝ち取ろう。
         </p>
 
         <button
@@ -287,6 +404,8 @@ function home() {
 }
 
 function createRoom() {
+  stopRefresh();
+
   app.innerHTML = `
     <div class="wrap">
 
@@ -308,18 +427,6 @@ function createRoom() {
       <div class="card">
 
         <div class="label">
-          あなたの名前
-        </div>
-
-        <input
-          id="playerName"
-          class="input"
-          maxlength="30"
-          placeholder="プレイヤー1"
-          value="プレイヤー1"
-        >
-
-        <div class="label">
           お題
         </div>
 
@@ -327,11 +434,16 @@ function createRoom() {
           id="customQuestion"
           class="input"
           maxlength="100"
-          placeholder="空欄ならランダムでお題を決めます"
+          placeholder="空欄ならランダムで決定"
         >
 
+        <div class="notice">
+          お題を入力しない場合は、
+          ランダムでお題が選ばれます。
+        </div>
+
         <div class="label">
-          開催期間
+          回答時間
         </div>
 
         <select
@@ -359,7 +471,10 @@ function createRoom() {
             3日
           </option>
 
-          <option value="432000" selected>
+          <option
+            value="432000"
+            selected
+          >
             5日
           </option>
 
@@ -382,7 +497,10 @@ function createRoom() {
             2
           </option>
 
-          <option value="3" selected>
+          <option
+            value="3"
+            selected
+          >
             3
           </option>
 
@@ -405,6 +523,8 @@ function createRoom() {
 }
 
 function joinRoom() {
+  stopRefresh();
+
   app.innerHTML = `
     <div class="wrap">
 
@@ -426,17 +546,6 @@ function joinRoom() {
       <div class="card">
 
         <div class="label">
-          あなたの名前
-        </div>
-
-        <input
-          id="playerName"
-          class="input"
-          maxlength="30"
-          placeholder="プレイヤー"
-        >
-
-        <div class="label">
           ルームコード
         </div>
 
@@ -445,6 +554,7 @@ function joinRoom() {
           class="input"
           maxlength="6"
           placeholder="例：AB12CD"
+          autocomplete="off"
         >
 
         <button
@@ -464,28 +574,67 @@ function joinRoom() {
 }
 
 function game() {
-  if (!state.room || !state.me) {
+  if (
+    !state.room ||
+    !state.me
+  ) {
     go("home");
     return;
   }
 
-  const left = Math.max(
-    0,
-    Number(state.room.deadline) - Date.now()
-  );
+  if (
+    state.phase ===
+    "finished"
+  ) {
+    state.screen =
+      "result";
 
-  if (left <= 0) {
-    state.screen = "result";
     render();
     return;
   }
 
-  const mine = state.answers.filter(
-    (answer) => answer.player_id === state.me.id
-  );
+  const mine =
+    state.answers.filter(
+      (answer) =>
+        answer.player_id ===
+        state.me.id
+    );
 
   const isHost =
-    state.room.host_player_id === state.me.id;
+    state.room
+      .host_player_id ===
+    state.me.id;
+
+  if (
+    state.phase ===
+    "voting"
+  ) {
+    votingScreen(
+      mine,
+      isHost
+    );
+
+    return;
+  }
+
+  answeringScreen(
+    mine,
+    isHost
+  );
+}
+
+function answeringScreen(
+  mine,
+  isHost
+) {
+  const left =
+    Math.max(
+      0,
+      Number(
+        state.room.deadline
+      ) -
+        Date.now()
+    );
 
   app.innerHTML = `
     <div class="wrap">
@@ -493,11 +642,14 @@ function game() {
       <div class="nav">
 
         <strong>
-          開催中
+          回答受付中
         </strong>
 
         <span class="badge">
-          ${mine.length}/${state.room.max_answers}回答
+          ${mine.length}/${
+            state.room
+              .max_answers
+          }回答
         </span>
 
       </div>
@@ -512,19 +664,25 @@ function game() {
         </div>
 
         <div class="question">
-          「${esc(state.room.question)}」
+          「${esc(
+            state.room.question
+          )}」
         </div>
 
         <div class="notice">
           ルームコード：
           <strong>
-            ${esc(state.room.code)}
+            ${esc(
+              state.room.code
+            )}
           </strong>
         </div>
 
         <div class="notice">
-          回答受付中です。投稿された回答は下に表示され、
-          開催期間中いつでも投票できます。
+          全員が回答枠を
+          使い切ると、
+          自動で投票タイムに
+          移ります。
         </div>
 
         <input
@@ -533,7 +691,11 @@ function game() {
           maxlength="100"
           placeholder="回答を入力してください"
           ${
-            mine.length >= state.room.max_answers
+            mine.length >=
+            Number(
+              state.room
+                .max_answers
+            )
               ? "disabled"
               : ""
           }
@@ -543,12 +705,24 @@ function game() {
           class="btn full"
           onclick="submitAnswer()"
           ${
-            mine.length >= state.room.max_answers
+            mine.length >=
+            Number(
+              state.room
+                .max_answers
+            )
               ? "disabled"
               : ""
           }
         >
-          回答する
+          ${
+            mine.length >=
+            Number(
+              state.room
+                .max_answers
+            )
+              ? "回答済み"
+              : "回答する"
+          }
         </button>
 
         ${
@@ -559,7 +733,7 @@ function game() {
                 onclick="endGameEarly()"
                 style="margin-top:12px"
               >
-                このお題を途中で終了する
+                回答受付を終了して投票へ
               </button>
             `
             : ""
@@ -575,75 +749,211 @@ function game() {
           みんなの回答
         </div>
 
-        <div id="answersArea">
-
-          ${
-            state.answers.length
-              ? state.answers.map(answerHTML).join("")
-              : `
-                <p class="muted">
-                  まだ回答がありません。
-                </p>
-              `
-          }
-
-        </div>
+        ${
+          state.answers.length
+            ? state.answers
+                .map(
+                  answerHTML
+                )
+                .join("")
+            : `
+              <p class="muted">
+                まだ回答がありません。
+              </p>
+            `
+        }
 
       </div>
 
     </div>
   `;
 
-  tick();
   startRefresh();
+  tickAnswering();
 }
 
-function answerHTML(answer) {
+function votingScreen() {
+  const left =
+    Math.max(
+      0,
+      Number(
+        state.votingDeadline ||
+          0
+      ) -
+        Date.now()
+    );
+
+  app.innerHTML = `
+    <div class="wrap">
+
+      <div class="nav">
+
+        <strong>
+          👍 投票タイム
+        </strong>
+
+        <span class="badge">
+          投票受付中
+        </span>
+
+      </div>
+
+      <div class="card">
+
+        <div
+          class="timer"
+          id="timer"
+        >
+          ${fmt(left)}
+        </div>
+
+        <div class="question">
+          「${esc(
+            state.room.question
+          )}」
+        </div>
+
+        <div class="notice">
+          好きな回答に
+          👍してください。
+          同じ回答には
+          1人10票まで
+          投票できます。
+        </div>
+
+        <div class="notice">
+          投票数は結果発表まで
+          非公開です。
+        </div>
+
+      </div>
+
+      <div class="card">
+
+        <div class="sectionTitle">
+          回答一覧
+        </div>
+
+        ${
+          state.answers.length
+            ? state.answers
+                .map(
+                  votingAnswerHTML
+                )
+                .join("")
+            : `
+              <p class="muted">
+                回答がありません。
+              </p>
+            `
+        }
+
+      </div>
+
+    </div>
+  `;
+
+  startRefresh();
+  tickVoting();
+}
+
+function answerHTML(
+  answer
+) {
   const mine =
-    answer.player_id === state.me.id;
-
-  const voted =
-    state.myVote &&
-    state.myVote.answer_id === answer.id;
-
-  const hasVote = !!state.myVote;
+    answer.player_id ===
+    state.me.id;
 
   return `
     <div class="answer">
 
       <div class="answerText">
-        ${esc(answer.text)}
+        ${esc(
+          answer.text
+        )}
       </div>
 
-      <div class="answerMeta">
-        ${
-          mine
-            ? "あなたの回答"
-            : "匿名プレイヤー"
-        }
+      ${
+        mine
+          ? `
+            <div class="answerMeta">
+              あなたの回答
+            </div>
+          `
+          : ""
+      }
+
+    </div>
+  `;
+}
+
+function votingAnswerHTML(
+  answer
+) {
+  const mine =
+    answer.player_id ===
+    state.me.id;
+
+  const myVoteCount =
+    Number(
+      state.myVotes[
+        answer.id
+      ] || 0
+    );
+
+  const reachedLimit =
+    myVoteCount >= 10;
+
+  return `
+    <div class="answer">
+
+      <div class="answerText">
+        ${esc(
+          answer.text
+        )}
       </div>
+
+      ${
+        mine
+          ? `
+            <div class="answerMeta">
+              あなたの回答
+            </div>
+          `
+          : ""
+      }
 
       <div class="voteRow">
 
-        <span class="voteCount">
-          ❤️ ${Number(answer.vote_count || 0)}票
-        </span>
-
-        <button
-          class="btn"
-          onclick="castVote('${answer.id}')"
-          ${
-            mine || hasVote
-              ? "disabled"
-              : ""
-          }
-        >
-          ${
-            voted
-              ? "投票済み"
-              : "投票する"
-          }
-        </button>
+        ${
+          mine
+            ? `
+              <button
+                class="btn"
+                disabled
+              >
+                自分の回答
+              </button>
+            `
+            : `
+              <button
+                class="btn"
+                onclick="castVote('${answer.id}')"
+                ${
+                  reachedLimit ||
+                  state.loading
+                    ? "disabled"
+                    : ""
+                }
+              >
+                ${
+                  reachedLimit
+                    ? "👍 投票済み"
+                    : "👍"
+                }
+              </button>
+            `
+        }
 
       </div>
 
@@ -653,12 +963,22 @@ function answerHTML(answer) {
 
 function result() {
   stopRefresh();
+  stopTick();
 
-  const list = [...state.answers].sort(
-    (a, b) =>
-      Number(b.vote_count || 0) -
-      Number(a.vote_count || 0)
-  );
+  const top5 =
+    [...state.answers]
+      .sort(
+        (a, b) =>
+          Number(
+            b.vote_count ||
+              0
+          ) -
+          Number(
+            a.vote_count ||
+              0
+          )
+      )
+      .slice(0, 5);
 
   app.innerHTML = `
     <div class="wrap">
@@ -668,7 +988,9 @@ function result() {
         style="text-align:center"
       >
 
-        <div style="font-size:42px">
+        <div
+          style="font-size:42px"
+        >
           🏆
         </div>
 
@@ -677,12 +999,15 @@ function result() {
         </h1>
 
         <p class="muted">
-          「${esc(state.room?.question || "")}」
+          「${esc(
+            state.room
+              ?.question ||
+              ""
+          )}」
         </p>
 
         <p class="muted">
-          ルームコード：
-          ${esc(state.room?.code || "")}
+          TOP5
         </p>
 
       </div>
@@ -690,26 +1015,41 @@ function result() {
       <div class="card">
 
         ${
-          list.length
-            ? list
+          top5.length
+            ? top5
                 .map(
-                  (answer, index) => `
+                  (
+                    answer,
+                    index
+                  ) => `
                     <div class="answer">
 
                       <div class="rank">
                         ${
-                          ["🥇", "🥈", "🥉"][index] ||
-                          `${index + 1}位`
+                          [
+                            "🥇",
+                            "🥈",
+                            "🥉"
+                          ][
+                            index
+                          ] ||
+                          `${
+                            index +
+                            1
+                          }位`
                         }
                       </div>
 
                       <div class="answerText">
-                        ${esc(answer.text)}
+                        ${esc(
+                          answer.text
+                        )}
                       </div>
 
                       <div class="answerMeta">
-                        ❤️ ${Number(
-                          answer.vote_count || 0
+                        👍 ${Number(
+                          answer.vote_count ||
+                            0
                         )}票
                       </div>
 
@@ -743,83 +1083,111 @@ async function create() {
   }
 
   const button =
-    document.getElementById("createButton");
+    document.getElementById(
+      "createButton"
+    );
 
   const err =
-    document.getElementById("err");
-
-  const playerName =
-    document
-      .getElementById("playerName")
-      .value
-      .trim() ||
-    "プレイヤー1";
+    document.getElementById(
+      "err"
+    );
 
   const customQuestion =
     document
-      .getElementById("customQuestion")
+      .getElementById(
+        "customQuestion"
+      )
       .value
       .trim();
 
   const durationSeconds =
     Number(
-      document.getElementById("duration").value
+      document.getElementById(
+        "duration"
+      ).value
     );
 
   const maxAnswers =
     Number(
-      document.getElementById("maxAnswers").value
+      document.getElementById(
+        "maxAnswers"
+      ).value
     );
 
   state.loading = true;
 
   button.disabled = true;
-  button.textContent = "作成中...";
+
+  button.textContent =
+    "作成中...";
 
   err.innerHTML = "";
 
   try {
-    const data = await api(
-      "/api/rooms",
-      {
-        method: "POST",
+    const data =
+      await api(
+        "/api/rooms",
+        {
+          method: "POST",
 
-        body: JSON.stringify({
-          question:
-            customQuestion || randomQuestion(),
-          durationSeconds,
-          maxAnswers,
-          playerName
-        })
-      }
-    );
+          body:
+            JSON.stringify({
+              question:
+                customQuestion ||
+                randomQuestion(),
 
-    state.room = data.room;
-    state.me = data.player;
+              durationSeconds,
+              maxAnswers,
+
+              playerName:
+                "匿名"
+            })
+        }
+      );
+
+    state.room =
+      data.room;
+
+    state.me =
+      data.player;
 
     state.answers = [];
-    state.myVote = null;
+    state.myVotes = {};
+    state.phase =
+      "answering";
+
+    state.votingDeadline =
+      null;
 
     saveSession();
 
-    state.screen = "game";
+    state.screen =
+      "game";
 
-    await refreshGame(false);
+    await refreshGame(
+      false
+    );
 
     render();
 
   } catch (error) {
     err.innerHTML = `
       <div class="error">
-        ${esc(error.message)}
+        ${esc(
+          error.message
+        )}
       </div>
     `;
 
-    button.disabled = false;
-    button.textContent = "ルームを作成";
+    button.disabled =
+      false;
+
+    button.textContent =
+      "ルームを作成";
 
   } finally {
-    state.loading = false;
+    state.loading =
+      false;
   }
 }
 
@@ -829,29 +1197,29 @@ async function join() {
   }
 
   const button =
-    document.getElementById("joinButton");
+    document.getElementById(
+      "joinButton"
+    );
 
   const err =
-    document.getElementById("err");
+    document.getElementById(
+      "err"
+    );
 
   const code =
     document
-      .getElementById("code")
+      .getElementById(
+        "code"
+      )
       .value
       .trim()
       .toUpperCase();
 
-  const playerName =
-    document
-      .getElementById("playerName")
-      .value
-      .trim() ||
-    "プレイヤー";
-
   if (!code) {
     err.innerHTML = `
       <div class="error">
-        ルームコードを入力してください。
+        ルームコードを
+        入力してください。
       </div>
     `;
 
@@ -861,67 +1229,101 @@ async function join() {
   state.loading = true;
 
   button.disabled = true;
-  button.textContent = "参加中...";
+
+  button.textContent =
+    "参加中...";
 
   err.innerHTML = "";
 
   try {
-    const data = await api(
-      "/api/join",
-      {
-        method: "POST",
+    const data =
+      await api(
+        "/api/join",
+        {
+          method: "POST",
 
-        body: JSON.stringify({
-          code,
-          name: playerName
-        })
-      }
-    );
+          body:
+            JSON.stringify({
+              code,
+              name: "匿名"
+            })
+        }
+      );
 
-    state.room = data.room;
-    state.me = data.player;
+    state.room =
+      data.room;
+
+    state.me =
+      data.player;
 
     state.answers = [];
-    state.myVote = null;
+    state.myVotes = {};
+    state.phase =
+      "answering";
+
+    state.votingDeadline =
+      null;
 
     saveSession();
 
     state.screen =
-      data.ended
-        ? "result"
-        : "game";
+      "game";
 
-    await refreshGame(false);
+    await refreshGame(
+      false
+    );
 
     render();
 
   } catch (error) {
     err.innerHTML = `
       <div class="error">
-        ${esc(error.message)}
+        ${esc(
+          error.message
+        )}
       </div>
     `;
 
-    button.disabled = false;
-    button.textContent = "参加する";
+    button.disabled =
+      false;
+
+    button.textContent =
+      "参加する";
 
   } finally {
-    state.loading = false;
+    state.loading =
+      false;
   }
 }
 
 async function submitAnswer() {
-  if (state.loading) {
+  if (
+    state.loading ||
+    state.phase !==
+      "answering"
+  ) {
     return;
   }
 
   const input =
-    document.getElementById("answer");
+    document.getElementById(
+      "answer"
+    );
 
   const err =
-    document.getElementById("err");
+    document.getElementById(
+      "err"
+    );
 
-  const text = input.value.trim();
+  if (
+    !input ||
+    !err
+  ) {
+    return;
+  }
+
+  const text =
+    input.value.trim();
 
   if (!text) {
     err.innerHTML = `
@@ -933,71 +1335,133 @@ async function submitAnswer() {
     return;
   }
 
-  state.loading = true;
+  state.loading =
+    true;
 
   err.innerHTML = "";
 
   try {
-    await api(
-      "/api/answers",
-      {
-        method: "POST",
+    const data =
+      await api(
+        "/api/answers",
+        {
+          method: "POST",
 
-        body: JSON.stringify({
-          roomId: state.room.id,
-          playerId: state.me.id,
-          text
-        })
-      }
-    );
+          body:
+            JSON.stringify({
+              roomId:
+                state.room.id,
+
+              playerId:
+                state.me.id,
+
+              text
+            })
+        }
+      );
 
     input.value = "";
 
-    await refreshGame();
+    if (
+      data.phase
+    ) {
+      state.phase =
+        data.phase;
+    }
+
+    if (
+      data.votingDeadline
+    ) {
+      state.votingDeadline =
+        Number(
+          data.votingDeadline
+        );
+    }
+
+    await refreshGame(
+      false
+    );
+
+    render();
 
   } catch (error) {
     err.innerHTML = `
       <div class="error">
-        ${esc(error.message)}
+        ${esc(
+          error.message
+        )}
       </div>
     `;
 
   } finally {
-    state.loading = false;
+    state.loading =
+      false;
   }
 }
 
-async function castVote(answerId) {
+async function castVote(
+  answerId
+) {
   if (
     state.loading ||
-    state.myVote
+    state.phase !==
+      "voting"
   ) {
     return;
   }
 
-  state.loading = true;
-
-  try {
-    await api(
-      "/api/votes",
-      {
-        method: "POST",
-
-        body: JSON.stringify({
-          roomId: state.room.id,
-          answerId,
-          playerId: state.me.id
-        })
-      }
+  const current =
+    Number(
+      state.myVotes[
+        answerId
+      ] || 0
     );
 
-    await refreshGame();
+  if (current >= 10) {
+    return;
+  }
+
+  state.loading =
+    true;
+
+  try {
+    const data =
+      await api(
+        "/api/votes",
+        {
+          method: "POST",
+
+          body:
+            JSON.stringify({
+              roomId:
+                state.room.id,
+
+              answerId,
+
+              playerId:
+                state.me.id
+            })
+        }
+      );
+
+    state.myVotes[
+      answerId
+    ] =
+      Number(
+        data.myVoteCount ||
+          current + 1
+      );
+
+    render();
 
   } catch (error) {
-    alert(error.message);
+    alert(
+      error.message
+    );
 
   } finally {
-    state.loading = false;
+    state.loading =
+      false;
   }
 }
 
@@ -1014,50 +1478,66 @@ async function refreshGame(
   try {
     const [
       answersData,
-      voteData
-    ] = await Promise.all([
-      api(
-        `/api/answers?roomId=${encodeURIComponent(
-          state.room.id
-        )}`
-      ),
+      votesData
+    ] =
+      await Promise.all([
+        api(
+          `/api/answers?roomId=${encodeURIComponent(
+            state.room.id
+          )}`
+        ),
 
-      api(
-        `/api/votes?roomId=${encodeURIComponent(
-          state.room.id
-        )}&playerId=${encodeURIComponent(
-          state.me.id
-        )}`
-      )
-    ]);
+        api(
+          `/api/votes?roomId=${encodeURIComponent(
+            state.room.id
+          )}&playerId=${encodeURIComponent(
+            state.me.id
+          )}`
+        )
+      ]);
 
     state.answers =
-      answersData.answers || [];
+      answersData.answers ||
+      [];
 
-    state.myVote =
-      voteData.vote || null;
+    state.myVotes =
+      votesData.myVotes ||
+      {};
 
-    if (answersData.ended) {
-      state.screen = "result";
+    state.phase =
+      answersData.phase ||
+      votesData.phase ||
+      "answering";
 
-      stopRefresh();
-
-      if (shouldRender) {
-        render();
-      }
-
-      return;
-    }
+    state.votingDeadline =
+      answersData
+        .votingDeadline ||
+      votesData
+        .votingDeadline ||
+      null;
 
     if (
-      shouldRender &&
-      state.screen === "game"
+      state.phase ===
+      "finished"
     ) {
+      state.screen =
+        "result";
+
+      stopRefresh();
+      stopTick();
+    } else {
+      state.screen =
+        "game";
+    }
+
+    if (shouldRender) {
       render();
     }
 
   } catch (error) {
-    console.error(error);
+    console.error(
+      error
+    );
   }
 }
 
@@ -1068,62 +1548,44 @@ async function restoreSession() {
   }
 
   try {
-    const data = await api(
-      `/api/rooms?code=${encodeURIComponent(
-        state.room.code
-      )}`
+    const data =
+      await api(
+        `/api/rooms?code=${encodeURIComponent(
+          state.room.code
+        )}`
+      );
+
+    state.room =
+      data.room;
+
+    state.screen =
+      "game";
+
+    await refreshGame(
+      false
     );
-
-    state.room = data.room;
-
-    const [
-      answersData,
-      voteData
-    ] = await Promise.all([
-      api(
-        `/api/answers?roomId=${encodeURIComponent(
-          state.room.id
-        )}`
-      ),
-
-      api(
-        `/api/votes?roomId=${encodeURIComponent(
-          state.room.id
-        )}&playerId=${encodeURIComponent(
-          state.me.id
-        )}`
-      )
-    ]);
-
-    state.answers =
-      answersData.answers || [];
-
-    state.myVote =
-      voteData.vote || null;
-
-    if (
-      data.ended ||
-      answersData.ended
-    ) {
-      state.screen = "result";
-    } else {
-      state.screen = "game";
-    }
 
     saveSession();
 
   } catch (error) {
-    console.error(error);
+    console.error(
+      error
+    );
 
     clearSession();
 
     state.room = null;
     state.me = null;
-
     state.answers = [];
-    state.myVote = null;
+    state.myVotes = {};
+    state.phase =
+      "answering";
 
-    state.screen = "home";
+    state.votingDeadline =
+      null;
+
+    state.screen =
+      "home";
   }
 
   render();
@@ -1132,25 +1594,29 @@ async function restoreSession() {
 async function endGameEarly() {
   if (
     !state.room ||
-    !state.me
+    !state.me ||
+    state.phase !==
+      "answering"
   ) {
     return;
   }
 
   if (
-    state.room.host_player_id !==
+    state.room
+      .host_player_id !==
     state.me.id
   ) {
     alert(
-      "ルーム作成者だけが終了できます。"
+      "ルーム作成者だけが操作できます。"
     );
 
     return;
   }
 
-  const ok = confirm(
-    "このお題を途中で終了しますか？\n\n終了すると回答・投票はできなくなります。"
-  );
+  const ok =
+    confirm(
+      "回答受付を終了して投票タイムに移りますか？"
+    );
 
   if (!ok) {
     return;
@@ -1160,100 +1626,154 @@ async function endGameEarly() {
     return;
   }
 
-  state.loading = true;
+  state.loading =
+    true;
 
   try {
-    const data = await api(
-      "/api/end",
-      {
-        method: "POST",
+    const data =
+      await api(
+        "/api/end",
+        {
+          method: "POST",
 
-        body: JSON.stringify({
-          roomId: state.room.id,
-          playerId: state.me.id
-        })
-      }
-    );
+          body:
+            JSON.stringify({
+              roomId:
+                state.room.id,
+
+              playerId:
+                state.me.id
+            })
+        }
+      );
 
     state.room.deadline =
-      data.deadline;
+      Number(
+        data.deadline
+      );
 
     saveSession();
 
-    await refreshGame(false);
-
-    state.screen = "result";
-
-    stopRefresh();
+    await refreshGame(
+      false
+    );
 
     render();
 
   } catch (error) {
-    console.error(error);
-
     alert(
       error.message ||
-      "終了処理に失敗しました。"
+        "終了処理に失敗しました。"
     );
 
   } finally {
-    state.loading = false;
+    state.loading =
+      false;
   }
 }
 
 function leaveRoom() {
   stopRefresh();
+  stopTick();
 
   clearSession();
 
   state.room = null;
   state.me = null;
-
   state.answers = [];
-  state.myVote = null;
+  state.myVotes = {};
+  state.phase =
+    "answering";
 
-  state.screen = "home";
+  state.votingDeadline =
+    null;
+
+  state.screen =
+    "home";
 
   render();
 }
 
-function tick() {
+function tickAnswering() {
+  stopTick();
+
   const el =
-    document.getElementById("timer");
+    document.getElementById(
+      "timer"
+    );
 
   if (
     !el ||
-    !state.room
+    !state.room ||
+    state.phase !==
+      "answering"
   ) {
     return;
   }
 
-  const left = Math.max(
-    0,
-    Number(state.room.deadline) -
-      Date.now()
-  );
+  const left =
+    Math.max(
+      0,
+      Number(
+        state.room.deadline
+      ) -
+        Date.now()
+    );
 
   el.textContent =
     fmt(left);
 
   if (left <= 0) {
-    state.screen = "result";
-
-    stopRefresh();
-
-    refreshGame(false)
-      .finally(() => {
-        render();
-      });
-
+    refreshGame(true);
     return;
   }
 
-  setTimeout(
-    tick,
-    1000
-  );
+  state.tickTimer =
+    setTimeout(
+      tickAnswering,
+      1000
+    );
+}
+
+function tickVoting() {
+  stopTick();
+
+  const el =
+    document.getElementById(
+      "timer"
+    );
+
+  if (
+    !el ||
+    state.phase !==
+      "voting"
+  ) {
+    return;
+  }
+
+  const left =
+    Math.max(
+      0,
+      Number(
+        state.votingDeadline ||
+          0
+      ) -
+        Date.now()
+    );
+
+  el.textContent =
+    fmt(left);
+
+  if (left <= 0) {
+    refreshGame(true);
+    return;
+  }
+
+  state.tickTimer =
+    setTimeout(
+      tickVoting,
+      1000
+    );
 }
 
 restoreSession();
