@@ -1,12 +1,9 @@
-// functions/api/rooms.js
-// 今の rooms.js をこれに丸ごと置き換え
-
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
     headers: {
-      "Content-Type": "application/json; charset=utf-8",
-    },
+      "Content-Type": "application/json; charset=utf-8"
+    }
   });
 
 function makeCode(length = 6) {
@@ -22,47 +19,58 @@ export async function onRequestGet(context) {
   try {
     const url = new URL(context.request.url);
 
-    const code = (url.searchParams.get("code") || "")
-      .trim()
-      .toUpperCase();
+    const code =
+      String(url.searchParams.get("code") || "")
+        .trim()
+        .toUpperCase();
 
     if (!code) {
-      return json({ error: "ルームコードが必要です。" }, 400);
+      return json(
+        { error: "ルームコードが必要です。" },
+        400
+      );
     }
 
-    const room = await context.env.DB.prepare(`
-      SELECT
-        id,
-        code,
-        question,
-        duration_seconds,
-        deadline,
-        max_answers,
-        created_at,
-        host_player_id
-      FROM rooms
-      WHERE code = ?
-    `)
-      .bind(code)
-      .first();
+    const room =
+      await context.env.DB.prepare(`
+        SELECT
+          id,
+          code,
+          question,
+          duration_seconds,
+          deadline,
+          max_answers,
+          created_at,
+          host_player_id
+        FROM rooms
+        WHERE code = ?
+      `)
+        .bind(code)
+        .first();
 
     if (!room) {
-      return json({ error: "ルームが見つかりません。" }, 404);
+      return json(
+        { error: "ルームが見つかりません。" },
+        404
+      );
     }
 
-    const players = await context.env.DB.prepare(`
-      SELECT id, name, created_at
-      FROM players
-      WHERE room_id = ?
-      ORDER BY created_at ASC
-    `)
-      .bind(room.id)
-      .all();
+    const players =
+      await context.env.DB.prepare(`
+        SELECT
+          id,
+          name,
+          created_at
+        FROM players
+        WHERE room_id = ?
+        ORDER BY created_at ASC
+      `)
+        .bind(room.id)
+        .all();
 
     return json({
       room,
-      players: players.results || [],
-      ended: Date.now() >= room.deadline,
+      players: players.results || []
     });
   } catch (error) {
     console.error(error);
@@ -78,18 +86,27 @@ export async function onRequestPost(context) {
   try {
     const body = await context.request.json();
 
-    const question = String(body.question || "").trim();
-
-    const playerName =
-      String(body.playerName || "プレイヤー")
+    const question =
+      String(body.question || "")
         .trim()
-        .slice(0, 30) || "プレイヤー";
+        .slice(0, 100);
 
-    const durationSeconds = Number(body.durationSeconds);
-    const maxAnswers = Number(body.maxAnswers);
+    const durationSeconds =
+      Number(body.durationSeconds);
+
+    /*
+      max_answers
+      0 = 無制限
+      1〜3 = 制限あり
+    */
+    const maxAnswers =
+      Number(body.maxAnswers);
 
     if (!question) {
-      return json({ error: "お題が必要です。" }, 400);
+      return json(
+        { error: "お題が必要です。" },
+        400
+      );
     }
 
     if (
@@ -97,35 +114,51 @@ export async function onRequestPost(context) {
       durationSeconds < 60 ||
       durationSeconds > 60 * 60 * 24 * 5
     ) {
-      return json({ error: "開催期間が正しくありません。" }, 400);
+      return json(
+        { error: "開催期間が正しくありません。" },
+        400
+      );
     }
 
     if (
       !Number.isInteger(maxAnswers) ||
-      maxAnswers < 1 ||
-      maxAnswers > 3
+      ![0, 1, 2, 3].includes(maxAnswers)
     ) {
-      return json({ error: "回答数は1〜3にしてください。" }, 400);
+      return json(
+        {
+          error:
+            "回答数は1〜3または無制限にしてください。"
+        },
+        400
+      );
     }
 
-    const roomId = crypto.randomUUID();
-    const playerId = crypto.randomUUID();
+    const roomId =
+      crypto.randomUUID();
 
-    const now = Date.now();
-    const deadline = now + durationSeconds * 1000;
+    const playerId =
+      crypto.randomUUID();
+
+    const now =
+      Date.now();
+
+    const deadline =
+      now + durationSeconds * 1000;
 
     let code = "";
 
     for (let i = 0; i < 10; i++) {
-      const candidate = makeCode();
+      const candidate =
+        makeCode();
 
-      const exists = await context.env.DB.prepare(`
-        SELECT id
-        FROM rooms
-        WHERE code = ?
-      `)
-        .bind(candidate)
-        .first();
+      const exists =
+        await context.env.DB.prepare(`
+          SELECT id
+          FROM rooms
+          WHERE code = ?
+        `)
+          .bind(candidate)
+          .first();
 
       if (!exists) {
         code = candidate;
@@ -135,7 +168,10 @@ export async function onRequestPost(context) {
 
     if (!code) {
       return json(
-        { error: "ルームコードの生成に失敗しました。" },
+        {
+          error:
+            "ルームコードの生成に失敗しました。"
+        },
         500
       );
     }
@@ -175,9 +211,9 @@ export async function onRequestPost(context) {
       `).bind(
         playerId,
         roomId,
-        playerName,
+        "匿名",
         now
-      ),
+      )
     ]);
 
     return json(
@@ -190,13 +226,13 @@ export async function onRequestPost(context) {
           deadline,
           max_answers: maxAnswers,
           created_at: now,
-          host_player_id: playerId,
+          host_player_id: playerId
         },
 
         player: {
           id: playerId,
-          name: playerName,
-        },
+          name: "匿名"
+        }
       },
       201
     );

@@ -1,4 +1,5 @@
 const MAX_VOTES_PER_ANSWER = 10;
+const VOTING_TIME_MS = 5 * 60 * 1000;
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -8,7 +9,22 @@ const json = (data, status = 200) =>
     }
   });
 
-async function getVotingPhase(DB, roomId) {
+async function getRoom(DB, roomId) {
+  return await DB.prepare(`
+    SELECT
+      id,
+      deadline
+    FROM rooms
+    WHERE id = ?
+  `)
+    .bind(roomId)
+    .first();
+}
+
+async function getVotingPhase(
+  DB,
+  roomId
+) {
   return await DB.prepare(`
     SELECT
       room_id,
@@ -21,39 +37,137 @@ async function getVotingPhase(DB, roomId) {
     .first();
 }
 
+async function startVotingPhase(
+  DB,
+  roomId,
+  now = Date.now()
+) {
+  const deadline =
+    now + VOTING_TIME_MS;
+
+  await DB.prepare(`
+    INSERT OR IGNORE INTO voting_phases (
+      room_id,
+      started_at,
+      deadline
+    )
+    VALUES (?, ?, ?)
+  `)
+    .bind(
+      roomId,
+      now,
+      deadline
+    )
+    .run();
+
+  return await getVotingPhase(
+    DB,
+    roomId
+  );
+}
+
+async function getPhase(
+  DB,
+  room
+) {
+  const now =
+    Date.now();
+
+  let votingPhase =
+    await getVotingPhase(
+      DB,
+      room.id
+    );
+
+  /*
+    回答時間切れなら
+    投票フェーズ開始
+  */
+  if (
+    !votingPhase &&
+    now >= Number(room.deadline)
+  ) {
+    votingPhase =
+      await startVotingPhase(
+        DB,
+        room.id,
+        now
+      );
+  }
+
+  if (!votingPhase) {
+    return {
+      phase: "answering",
+      votingDeadline: null
+    };
+  }
+
+  if (
+    now >= Number(votingPhase.deadline)
+  ) {
+    return {
+      phase: "finished",
+      votingDeadline:
+        Number(votingPhase.deadline)
+    };
+  }
+
+  return {
+    phase: "voting",
+    votingDeadline:
+      Number(votingPhase.deadline)
+  };
+}
+
 export async function onRequestGet(context) {
   try {
-    const url = new URL(context.request.url);
+    const url =
+      new URL(context.request.url);
 
     const roomId =
-      String(url.searchParams.get("roomId") || "").trim();
+      String(
+        url.searchParams.get("roomId") || ""
+      ).trim();
 
     const playerId =
-      String(url.searchParams.get("playerId") || "").trim();
+      String(
+        url.searchParams.get("playerId") || ""
+      ).trim();
 
-    if (!roomId || !playerId) {
+    if (
+      !roomId ||
+      !playerId
+    ) {
       return json(
-        { error: "投票情報が不足しています。" },
+        {
+          error:
+            "投票情報が不足しています。"
+        },
         400
       );
     }
 
-    const votingPhase =
-      await getVotingPhase(
+    const room =
+      await getRoom(
         context.env.DB,
         roomId
       );
 
-    const now = Date.now();
-
-    let phase = "answering";
-
-    if (votingPhase) {
-      phase =
-        now >= Number(votingPhase.deadline)
-          ? "finished"
-          : "voting";
+    if (!room) {
+      return json(
+        {
+          error:
+            "ルームが見つかりません。"
+        },
+        404
+      );
     }
+
+    const phaseInfo =
+      await getPhase(
+        context.env.DB,
+        room
+      );
 
     const votes =
       await context.env.DB.prepare(`
@@ -74,25 +188,28 @@ export async function onRequestGet(context) {
 
     const myVotes = {};
 
-    for (const row of votes.results || []) {
+    for (
+      const row of votes.results || []
+    ) {
       myVotes[row.answer_id] =
         Number(row.count || 0);
     }
 
     return json({
-      phase,
+      phase:
+        phaseInfo.phase,
       votingDeadline:
-        votingPhase
-          ? Number(votingPhase.deadline)
-          : null,
+        phaseInfo.votingDeadline,
       myVotes
     });
-
   } catch (error) {
     console.error(error);
 
     return json(
-      { error: "投票情報の取得に失敗しました。" },
+      {
+        error:
+          "投票情報の取得に失敗しました。"
+      },
       500
     );
   }
@@ -104,13 +221,16 @@ export async function onRequestPost(context) {
       await context.request.json();
 
     const roomId =
-      String(body.roomId || "").trim();
+      String(body.roomId || "")
+        .trim();
 
     const answerId =
-      String(body.answerId || "").trim();
+      String(body.answerId || "")
+        .trim();
 
     const playerId =
-      String(body.playerId || "").trim();
+      String(body.playerId || "")
+        .trim();
 
     if (
       !roomId ||
@@ -118,30 +238,49 @@ export async function onRequestPost(context) {
       !playerId
     ) {
       return json(
-        { error: "投票情報が不足しています。" },
+        {
+          error:
+            "投票情報が不足しています。"
+        },
         400
       );
     }
 
-    const votingPhase =
-      await getVotingPhase(
+    const room =
+      await getRoom(
         context.env.DB,
         roomId
       );
 
-    if (!votingPhase) {
+    if (!room) {
       return json(
-        { error: "まだ投票タイムではありません。" },
-        400
+        {
+          error:
+            "ルームが見つかりません。"
+        },
+        404
       );
     }
 
+    const phaseInfo =
+      await getPhase(
+        context.env.DB,
+        room
+      );
+
+    /*
+      回答中 → 👍可能
+      投票中 → 👍可能
+      結果発表後 → 👍不可
+    */
     if (
-      Date.now() >=
-      Number(votingPhase.deadline)
+      phaseInfo.phase === "finished"
     ) {
       return json(
-        { error: "投票時間は終了しています。" },
+        {
+          error:
+            "投票は終了しています。"
+        },
         400
       );
     }
@@ -162,7 +301,10 @@ export async function onRequestPost(context) {
 
     if (!player) {
       return json(
-        { error: "参加者情報が見つかりません。" },
+        {
+          error:
+            "参加者情報が見つかりません。"
+        },
         403
       );
     }
@@ -185,7 +327,10 @@ export async function onRequestPost(context) {
 
     if (!answer) {
       return json(
-        { error: "回答が見つかりません。" },
+        {
+          error:
+            "回答が見つかりません。"
+        },
         404
       );
     }
@@ -194,7 +339,10 @@ export async function onRequestPost(context) {
       answer.player_id === playerId
     ) {
       return json(
-        { error: "自分の回答には投票できません。" },
+        {
+          error:
+            "自分の回答には投票できません。"
+        },
         400
       );
     }
@@ -261,16 +409,20 @@ export async function onRequestPost(context) {
         success: true,
         answerId,
         myVoteCount:
-          currentVotes + 1
+          currentVotes + 1,
+        phase:
+          phaseInfo.phase
       },
       201
     );
-
   } catch (error) {
     console.error(error);
 
     return json(
-      { error: "投票に失敗しました。" },
+      {
+        error:
+          "投票に失敗しました。"
+      },
       500
     );
   }
