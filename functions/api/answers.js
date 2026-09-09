@@ -69,8 +69,9 @@ async function getPhase(DB, room) {
     );
 
   /*
-    回答時間そのものが終了していた場合も
-    自動的に投票タイムへ移行する
+    回答時間が終了していて、
+    まだ投票フェーズが存在しない場合は
+    5分間の投票タイムを開始
   */
   if (
     !votingPhase &&
@@ -84,58 +85,113 @@ async function getPhase(DB, room) {
       );
   }
 
-  if (votingPhase) {
-    if (
-      now >=
-      Number(votingPhase.deadline)
-    ) {
-      return {
-        phase: "finished",
-        votingStartedAt:
-          Number(
-            votingPhase.started_at
-          ),
-        votingDeadline:
-          Number(
-            votingPhase.deadline
-          )
-      };
-    }
-
+  if (!votingPhase) {
     return {
-      phase: "voting",
+      phase: "answering",
+      votingStartedAt: null,
+      votingDeadline: null
+    };
+  }
+
+  if (
+    now >= Number(votingPhase.deadline)
+  ) {
+    return {
+      phase: "finished",
       votingStartedAt:
-        Number(
-          votingPhase.started_at
-        ),
+        Number(votingPhase.started_at),
       votingDeadline:
-        Number(
-          votingPhase.deadline
-        )
+        Number(votingPhase.deadline)
     };
   }
 
   return {
-    phase: "answering",
-    votingStartedAt: null,
-    votingDeadline: null
+    phase: "voting",
+    votingStartedAt:
+      Number(votingPhase.started_at),
+    votingDeadline:
+      Number(votingPhase.deadline)
   };
 }
 
-export async function onRequestGet(
-  context
-) {
+/*
+  回答中・投票中に使う取得処理。
+
+  重要：
+  votesテーブルには一切触れない。
+  そのため総得票数はAPIから漏れない。
+*/
+async function getPublicAnswers(DB, roomId) {
+  const result =
+    await DB.prepare(`
+      SELECT
+        id,
+        room_id,
+        player_id,
+        text,
+        created_at
+      FROM answers
+      WHERE room_id = ?
+      ORDER BY created_at ASC
+    `)
+      .bind(roomId)
+      .all();
+
+  return result.results || [];
+}
+
+/*
+  投票終了後だけ使用。
+
+  得票数を集計して、
+  上位5件だけ返す。
+*/
+async function getTop5Results(DB, roomId) {
+  const result =
+    await DB.prepare(`
+      SELECT
+        answers.id,
+        answers.room_id,
+        answers.player_id,
+        answers.text,
+        answers.created_at,
+        COUNT(votes.id) AS vote_count
+      FROM answers
+      LEFT JOIN votes
+        ON votes.answer_id = answers.id
+        AND votes.room_id = answers.room_id
+      WHERE answers.room_id = ?
+      GROUP BY
+        answers.id,
+        answers.room_id,
+        answers.player_id,
+        answers.text,
+        answers.created_at
+      ORDER BY
+        vote_count DESC,
+        answers.created_at ASC
+      LIMIT 5
+    `)
+      .bind(roomId)
+      .all();
+
+  return (result.results || []).map(
+    (answer) => ({
+      ...answer,
+      vote_count:
+        Number(answer.vote_count || 0)
+    })
+  );
+}
+
+export async function onRequestGet(context) {
   try {
     const url =
-      new URL(
-        context.request.url
-      );
+      new URL(context.request.url);
 
     const roomId =
       String(
-        url.searchParams.get(
-          "roomId"
-        ) || ""
+        url.searchParams.get("roomId") || ""
       ).trim();
 
     if (!roomId) {
@@ -170,36 +226,48 @@ export async function onRequestGet(
         room
       );
 
+    /*
+      投票終了後だけ
+      得票数付きTOP5を取得
+    */
+    if (
+      phaseInfo.phase === "finished"
+    ) {
+      const answers =
+        await getTop5Results(
+          context.env.DB,
+          roomId
+        );
+
+      return json({
+        answers,
+
+        phase: "finished",
+
+        answering: false,
+        voting: false,
+        ended: true,
+
+        votingStartedAt:
+          phaseInfo.votingStartedAt,
+
+        votingDeadline:
+          phaseInfo.votingDeadline
+      });
+    }
+
+    /*
+      回答中・投票中は
+      得票数なしの回答一覧だけ返す
+    */
     const answers =
-      await context.env.DB.prepare(`
-        SELECT
-          answers.id,
-          answers.room_id,
-          answers.player_id,
-          answers.text,
-          answers.created_at,
-          COUNT(votes.id) AS vote_count
-        FROM answers
-        LEFT JOIN votes
-          ON votes.answer_id =
-             answers.id
-        WHERE
-          answers.room_id = ?
-        GROUP BY
-          answers.id,
-          answers.room_id,
-          answers.player_id,
-          answers.text,
-          answers.created_at
-        ORDER BY
-          answers.created_at ASC
-      `)
-        .bind(roomId)
-        .all();
+      await getPublicAnswers(
+        context.env.DB,
+        roomId
+      );
 
     return json({
-      answers:
-        answers.results || [],
+      answers,
 
       phase:
         phaseInfo.phase,
@@ -212,9 +280,7 @@ export async function onRequestGet(
         phaseInfo.phase ===
         "voting",
 
-      ended:
-        phaseInfo.phase ===
-        "finished",
+      ended: false,
 
       votingStartedAt:
         phaseInfo.votingStartedAt,
@@ -236,9 +302,7 @@ export async function onRequestGet(
   }
 }
 
-export async function onRequestPost(
-  context
-) {
+export async function onRequestPost(context) {
   try {
     const body =
       await context.request.json();
@@ -290,10 +354,6 @@ export async function onRequestPost(
       );
     }
 
-    /*
-      すでに投票タイムなら
-      回答はできない
-    */
     let votingPhase =
       await getVotingPhase(
         context.env.DB,
@@ -301,9 +361,8 @@ export async function onRequestPost(
       );
 
     /*
-      回答時間切れ
-      ↓
-      5分間の投票タイム開始
+      回答時間切れなら
+      投票タイムを開始
     */
     if (
       !votingPhase &&
@@ -317,11 +376,15 @@ export async function onRequestPost(
         );
     }
 
+    /*
+      投票フェーズが存在する時点で
+      新しい回答は禁止
+    */
     if (votingPhase) {
       return json(
         {
           error:
-            "回答受付は終了しています。投票タイムです。"
+            "回答受付は終了しています。"
         },
         400
       );
@@ -377,8 +440,7 @@ export async function onRequestPost(
       );
 
     if (
-      currentCount >=
-      maxAnswers
+      currentCount >= maxAnswers
     ) {
       return json(
         {
@@ -415,8 +477,7 @@ export async function onRequestPost(
       .run();
 
     /*
-      まだ回答枠が残っている
-      プレイヤーが何人いるか確認
+      回答枠が残っている参加者を数える
     */
     const remainingPlayers =
       await context.env.DB.prepare(`
@@ -429,10 +490,8 @@ export async function onRequestPost(
             SELECT COUNT(*)
             FROM answers AS a
             WHERE
-              a.room_id =
-                p.room_id
-              AND a.player_id =
-                p.id
+              a.room_id = p.room_id
+              AND a.player_id = p.id
           ) < ?
       `)
         .bind(
@@ -443,8 +502,7 @@ export async function onRequestPost(
 
     const remaining =
       Number(
-        remainingPlayers?.count ||
-          0
+        remainingPlayers?.count || 0
       );
 
     let phase =
@@ -457,10 +515,8 @@ export async function onRequestPost(
       null;
 
     /*
-      全員が回答権を
-      使い切った
-      ↓
-      投票タイム開始
+      全員が回答枠を使い切ったら
+      その瞬間から5分間の投票開始
     */
     if (remaining === 0) {
       const newVotingPhase =
@@ -470,8 +526,7 @@ export async function onRequestPost(
           now
         );
 
-      phase =
-        "voting";
+      phase = "voting";
 
       votingStartedAt =
         Number(

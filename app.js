@@ -134,105 +134,62 @@ const state = {
   phase: "answering",
   votingDeadline: null,
   loading: false,
+  votingAnswerId: null,
   refreshTimer: null,
-  tickTimer: null
+  tickTimer: null,
+  reloading: false
 };
 
 const app = document.querySelector("#app");
 
 const esc = (s) =>
-  String(s).replace(
-    /[&<>"']/g,
-    (c) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-      }[c])
-  );
+  String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[c]));
 
 const randomQuestion = () =>
-  QUESTIONS[
-    Math.floor(
-      Math.random() *
-        QUESTIONS.length
-    )
-  ];
+  QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
 
 const fmt = (ms) => {
-  let s = Math.max(
-    0,
-    Math.ceil(ms / 1000)
-  );
+  let s = Math.max(0, Math.ceil(ms / 1000));
 
-  const d =
-    Math.floor(s / 86400);
-
+  const d = Math.floor(s / 86400);
   s %= 86400;
 
-  const h =
-    Math.floor(s / 3600);
-
+  const h = Math.floor(s / 3600);
   s %= 3600;
 
-  const m =
-    Math.floor(s / 60);
-
-  const r =
-    s % 60;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
 
   if (d > 0) {
-    return `${d}日 ${String(h).padStart(
-      2,
-      "0"
-    )}:${String(m).padStart(
-      2,
-      "0"
-    )}`;
+    return `${d}日 ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   }
 
-  return `${String(h).padStart(
-    2,
-    "0"
-  )}:${String(m).padStart(
-    2,
-    "0"
-  )}:${String(r).padStart(
-    2,
-    "0"
-  )}`;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
 };
 
-async function api(
-  url,
-  options = {}
-) {
-  const response =
-    await fetch(url, {
-      ...options,
-
-      headers: {
-        "Content-Type":
-          "application/json",
-
-        ...(options.headers || {})
-      }
-    });
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
 
   let data = {};
 
   try {
-    data =
-      await response.json();
+    data = await response.json();
   } catch {}
 
   if (!response.ok) {
-    throw new Error(
-      data.error ||
-        "通信に失敗しました。"
-    );
+    throw new Error(data.error || "通信に失敗しました。");
   }
 
   return data;
@@ -249,89 +206,89 @@ function saveSession() {
 }
 
 function clearSession() {
-  localStorage.removeItem(
-    "anonymousOgiriSession"
-  );
+  localStorage.removeItem("anonymousOgiriSession");
 }
 
 function loadSession() {
   try {
-    const raw =
-      localStorage.getItem(
-        "anonymousOgiriSession"
-      );
+    const raw = localStorage.getItem("anonymousOgiriSession");
 
-    if (!raw) {
+    if (!raw) return false;
+
+    const data = JSON.parse(raw);
+
+    if (!data.room?.code || !data.me?.id) {
       return false;
     }
 
-    const data =
-      JSON.parse(raw);
-
-    if (
-      !data.room?.code ||
-      !data.me?.id
-    ) {
-      return false;
-    }
-
-    state.room =
-      data.room;
-
-    state.me =
-      data.me;
+    state.room = data.room;
+    state.me = data.me;
 
     return true;
-
   } catch {
     return false;
   }
 }
 
 function stopRefresh() {
-  if (
-    state.refreshTimer
-  ) {
-    clearInterval(
-      state.refreshTimer
-    );
-
-    state.refreshTimer =
-      null;
+  if (state.refreshTimer) {
+    clearInterval(state.refreshTimer);
+    state.refreshTimer = null;
   }
 }
 
 function startRefresh() {
   stopRefresh();
 
-  state.refreshTimer =
-    setInterval(() => {
-      if (
-        state.screen ===
-        "game"
-      ) {
-        refreshGame(false);
-      }
-    }, 3000);
+  state.refreshTimer = setInterval(() => {
+    if (state.screen === "game") {
+      refreshGame(false);
+    }
+  }, 3000);
 }
 
 function stopTick() {
   if (state.tickTimer) {
-    clearTimeout(
-      state.tickTimer
-    );
-
-    state.tickTimer =
-      null;
+    clearTimeout(state.tickTimer);
+    state.tickTimer = null;
   }
+}
+
+function reloadAtDeadline() {
+  if (state.reloading) return;
+
+  state.reloading = true;
+
+  stopRefresh();
+  stopTick();
+
+  location.reload();
 }
 
 function go(screen) {
   stopRefresh();
   stopTick();
 
-  state.screen =
-    screen;
+  state.screen = screen;
+  render();
+}
+
+function backHome() {
+  stopRefresh();
+  stopTick();
+
+  state.screen = "home";
+  render();
+}
+
+async function returnToRoom() {
+  if (!state.room?.id || !state.me?.id) {
+    return;
+  }
+
+  state.screen = "game";
+
+  await refreshGame(false);
 
   render();
 }
@@ -339,35 +296,24 @@ function go(screen) {
 function render() {
   stopTick();
 
-  if (
-    state.screen === "home"
-  ) {
+  if (state.screen === "home") {
     home();
-
-  } else if (
-    state.screen === "create"
-  ) {
+  } else if (state.screen === "create") {
     createRoom();
-
-  } else if (
-    state.screen === "join"
-  ) {
+  } else if (state.screen === "join") {
     joinRoom();
-
-  } else if (
-    state.screen === "game"
-  ) {
+  } else if (state.screen === "game") {
     game();
-
-  } else if (
-    state.screen === "result"
-  ) {
+  } else if (state.screen === "result") {
     result();
   }
 }
 
 function home() {
   stopRefresh();
+
+  const hasRoom =
+    Boolean(state.room?.id && state.me?.id);
 
   app.innerHTML = `
     <div class="wrap">
@@ -383,8 +329,26 @@ function home() {
           みんなの👍を勝ち取ろう。
         </p>
 
+        ${
+          hasRoom
+            ? `
+              <button
+                class="btn full"
+                onclick="returnToRoom()"
+              >
+                参加中のルームに戻る
+              </button>
+
+              <div class="notice">
+                ルームコード：
+                <strong>${esc(state.room.code)}</strong>
+              </div>
+            `
+            : ""
+        }
+
         <button
-          class="btn full"
+          class="btn ${hasRoom ? "secondary" : ""} full"
           onclick="go('create')"
         >
           ルームを作る
@@ -396,6 +360,19 @@ function home() {
         >
           ルームに参加する
         </button>
+
+        ${
+          hasRoom
+            ? `
+              <button
+                class="btn secondary full"
+                onclick="leaveRoom()"
+              >
+                今のルームから退出
+              </button>
+            `
+            : ""
+        }
 
       </div>
 
@@ -410,10 +387,7 @@ function createRoom() {
     <div class="wrap">
 
       <div class="nav">
-
-        <strong>
-          ルーム作成
-        </strong>
+        <strong>ルーム作成</strong>
 
         <button
           class="btn secondary"
@@ -421,7 +395,6 @@ function createRoom() {
         >
           戻る
         </button>
-
       </div>
 
       <div class="card">
@@ -450,34 +423,12 @@ function createRoom() {
           id="duration"
           class="input"
         >
-
-          <option value="3600">
-            1時間
-          </option>
-
-          <option value="21600">
-            6時間
-          </option>
-
-          <option value="43200">
-            12時間
-          </option>
-
-          <option value="86400">
-            1日
-          </option>
-
-          <option value="259200">
-            3日
-          </option>
-
-          <option
-            value="432000"
-            selected
-          >
-            5日
-          </option>
-
+          <option value="3600">1時間</option>
+          <option value="21600">6時間</option>
+          <option value="43200">12時間</option>
+          <option value="86400">1日</option>
+          <option value="259200">3日</option>
+          <option value="432000" selected>5日</option>
         </select>
 
         <div class="label">
@@ -488,22 +439,9 @@ function createRoom() {
           id="maxAnswers"
           class="input"
         >
-
-          <option value="1">
-            1
-          </option>
-
-          <option value="2">
-            2
-          </option>
-
-          <option
-            value="3"
-            selected
-          >
-            3
-          </option>
-
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3" selected>3</option>
         </select>
 
         <button
@@ -529,10 +467,7 @@ function joinRoom() {
     <div class="wrap">
 
       <div class="nav">
-
-        <strong>
-          ルーム参加
-        </strong>
+        <strong>ルーム参加</strong>
 
         <button
           class="btn secondary"
@@ -540,7 +475,6 @@ function joinRoom() {
         >
           戻る
         </button>
-
       </div>
 
       <div class="card">
@@ -574,115 +508,67 @@ function joinRoom() {
 }
 
 function game() {
-  if (
-    !state.room ||
-    !state.me
-  ) {
+  if (!state.room || !state.me) {
     go("home");
     return;
   }
 
-  if (
-    state.phase ===
-    "finished"
-  ) {
-    state.screen =
-      "result";
-
+  if (state.phase === "finished") {
+    state.screen = "result";
     render();
     return;
   }
 
-  const mine =
-    state.answers.filter(
-      (answer) =>
-        answer.player_id ===
-        state.me.id
-    );
+  const mine = state.answers.filter(
+    (answer) => answer.player_id === state.me.id
+  );
 
   const isHost =
-    state.room
-      .host_player_id ===
-    state.me.id;
+    state.room.host_player_id === state.me.id;
 
-  if (
-    state.phase ===
-    "voting"
-  ) {
-    votingScreen(
-      mine,
-      isHost
-    );
-
+  if (state.phase === "voting") {
+    votingScreen(isHost);
     return;
   }
 
-  answeringScreen(
-    mine,
-    isHost
-  );
+  answeringScreen(mine, isHost);
 }
 
-function answeringScreen(
-  mine,
-  isHost
-) {
-  const left =
-    Math.max(
-      0,
-      Number(
-        state.room.deadline
-      ) -
-        Date.now()
-    );
+function answeringScreen(mine, isHost) {
+  const left = Math.max(
+    0,
+    Number(state.room.deadline) - Date.now()
+  );
 
   app.innerHTML = `
     <div class="wrap">
 
       <div class="nav">
-
-        <strong>
-          回答受付中
-        </strong>
+        <strong>回答受付中</strong>
 
         <span class="badge">
-          ${mine.length}/${
-            state.room
-              .max_answers
-          }回答
+          ${mine.length}/${state.room.max_answers}回答
         </span>
-
       </div>
 
       <div class="card">
 
-        <div
-          class="timer"
-          id="timer"
-        >
+        <div class="timer" id="timer">
           ${fmt(left)}
         </div>
 
         <div class="question">
-          「${esc(
-            state.room.question
-          )}」
+          「${esc(state.room.question)}」
         </div>
 
         <div class="notice">
           ルームコード：
-          <strong>
-            ${esc(
-              state.room.code
-            )}
-          </strong>
+          <strong>${esc(state.room.code)}</strong>
         </div>
 
         <div class="notice">
-          全員が回答枠を
-          使い切ると、
-          自動で投票タイムに
-          移ります。
+          全員が回答枠を使い切ると、
+          自動で投票タイムに移ります。
         </div>
 
         <input
@@ -691,11 +577,7 @@ function answeringScreen(
           maxlength="100"
           placeholder="回答を入力してください"
           ${
-            mine.length >=
-            Number(
-              state.room
-                .max_answers
-            )
+            mine.length >= Number(state.room.max_answers)
               ? "disabled"
               : ""
           }
@@ -705,21 +587,13 @@ function answeringScreen(
           class="btn full"
           onclick="submitAnswer()"
           ${
-            mine.length >=
-            Number(
-              state.room
-                .max_answers
-            )
+            mine.length >= Number(state.room.max_answers)
               ? "disabled"
               : ""
           }
         >
           ${
-            mine.length >=
-            Number(
-              state.room
-                .max_answers
-            )
+            mine.length >= Number(state.room.max_answers)
               ? "回答済み"
               : "回答する"
           }
@@ -730,7 +604,7 @@ function answeringScreen(
             ? `
               <button
                 class="btn secondary full"
-                onclick="endGameEarly()"
+                onclick="endAnsweringEarly()"
                 style="margin-top:12px"
               >
                 回答受付を終了して投票へ
@@ -738,6 +612,14 @@ function answeringScreen(
             `
             : ""
         }
+
+        <button
+          class="btn secondary full"
+          onclick="backHome()"
+          style="margin-top:12px"
+        >
+          ホームへ戻る
+        </button>
 
         <div id="err"></div>
 
@@ -751,11 +633,7 @@ function answeringScreen(
 
         ${
           state.answers.length
-            ? state.answers
-                .map(
-                  answerHTML
-                )
-                .join("")
+            ? state.answers.map(answerHTML).join("")
             : `
               <p class="muted">
                 まだ回答がありません。
@@ -772,59 +650,63 @@ function answeringScreen(
   tickAnswering();
 }
 
-function votingScreen() {
-  const left =
-    Math.max(
-      0,
-      Number(
-        state.votingDeadline ||
-          0
-      ) -
-        Date.now()
-    );
+function votingScreen(isHost) {
+  const left = Math.max(
+    0,
+    Number(state.votingDeadline || 0) - Date.now()
+  );
 
   app.innerHTML = `
     <div class="wrap">
 
       <div class="nav">
-
-        <strong>
-          👍 投票タイム
-        </strong>
+        <strong>👍 投票タイム</strong>
 
         <span class="badge">
           投票受付中
         </span>
-
       </div>
 
       <div class="card">
 
-        <div
-          class="timer"
-          id="timer"
-        >
+        <div class="timer" id="timer">
           ${fmt(left)}
         </div>
 
         <div class="question">
-          「${esc(
-            state.room.question
-          )}」
+          「${esc(state.room.question)}」
         </div>
 
         <div class="notice">
-          好きな回答に
-          👍してください。
-          同じ回答には
-          1人10票まで
-          投票できます。
+          好きな回答に👍してください。
+          同じ回答には1人10票まで投票できます。
         </div>
 
         <div class="notice">
-          投票数は結果発表まで
-          非公開です。
+          総投票数は結果発表まで非公開です。
         </div>
+
+        ${
+          isHost
+            ? `
+              <button
+                class="btn full"
+                onclick="endVotingEarly()"
+                style="margin-top:12px"
+              >
+                投票を終了して結果発表
+              </button>
+            `
+            : ""
+        }
+
+        <button
+          class="btn secondary full"
+          onclick="backHome()"
+          style="margin-top:12px"
+        >
+          ホームへ戻る
+        </button>
 
       </div>
 
@@ -836,11 +718,7 @@ function votingScreen() {
 
         ${
           state.answers.length
-            ? state.answers
-                .map(
-                  votingAnswerHTML
-                )
-                .join("")
+            ? state.answers.map(votingAnswerHTML).join("")
             : `
               <p class="muted">
                 回答がありません。
@@ -857,20 +735,15 @@ function votingScreen() {
   tickVoting();
 }
 
-function answerHTML(
-  answer
-) {
+function answerHTML(answer) {
   const mine =
-    answer.player_id ===
-    state.me.id;
+    answer.player_id === state.me.id;
 
   return `
     <div class="answer">
 
       <div class="answerText">
-        ${esc(
-          answer.text
-        )}
+        ${esc(answer.text)}
       </div>
 
       ${
@@ -887,30 +760,24 @@ function answerHTML(
   `;
 }
 
-function votingAnswerHTML(
-  answer
-) {
+function votingAnswerHTML(answer) {
   const mine =
-    answer.player_id ===
-    state.me.id;
+    answer.player_id === state.me.id;
 
   const myVoteCount =
-    Number(
-      state.myVotes[
-        answer.id
-      ] || 0
-    );
+    Number(state.myVotes[answer.id] || 0);
 
   const reachedLimit =
     myVoteCount >= 10;
+
+  const sending =
+    state.votingAnswerId === answer.id;
 
   return `
     <div class="answer">
 
       <div class="answerText">
-        ${esc(
-          answer.text
-        )}
+        ${esc(answer.text)}
       </div>
 
       ${
@@ -940,16 +807,17 @@ function votingAnswerHTML(
                 class="btn"
                 onclick="castVote('${answer.id}')"
                 ${
-                  reachedLimit ||
-                  state.loading
+                  reachedLimit || sending
                     ? "disabled"
                     : ""
                 }
               >
                 ${
-                  reachedLimit
-                    ? "👍 投票済み"
-                    : "👍"
+                  sending
+                    ? "👍..."
+                    : reachedLimit
+                      ? "👍 上限"
+                      : "👍"
                 }
               </button>
             `
@@ -965,20 +833,13 @@ function result() {
   stopRefresh();
   stopTick();
 
-  const top5 =
-    [...state.answers]
-      .sort(
-        (a, b) =>
-          Number(
-            b.vote_count ||
-              0
-          ) -
-          Number(
-            a.vote_count ||
-              0
-          )
-      )
-      .slice(0, 5);
+  const top5 = [...state.answers]
+    .sort(
+      (a, b) =>
+        Number(b.vote_count || 0) -
+        Number(a.vote_count || 0)
+    )
+    .slice(0, 5);
 
   app.innerHTML = `
     <div class="wrap">
@@ -988,9 +849,7 @@ function result() {
         style="text-align:center"
       >
 
-        <div
-          style="font-size:42px"
-        >
+        <div style="font-size:42px">
           🏆
         </div>
 
@@ -999,11 +858,7 @@ function result() {
         </h1>
 
         <p class="muted">
-          「${esc(
-            state.room
-              ?.question ||
-              ""
-          )}」
+          「${esc(state.room?.question || "")}」
         </p>
 
         <p class="muted">
@@ -1018,39 +873,22 @@ function result() {
           top5.length
             ? top5
                 .map(
-                  (
-                    answer,
-                    index
-                  ) => `
+                  (answer, index) => `
                     <div class="answer">
 
                       <div class="rank">
                         ${
-                          [
-                            "🥇",
-                            "🥈",
-                            "🥉"
-                          ][
-                            index
-                          ] ||
-                          `${
-                            index +
-                            1
-                          }位`
+                          ["🥇", "🥈", "🥉"][index] ||
+                          `${index + 1}位`
                         }
                       </div>
 
                       <div class="answerText">
-                        ${esc(
-                          answer.text
-                        )}
+                        ${esc(answer.text)}
                       </div>
 
                       <div class="answerMeta">
-                        👍 ${Number(
-                          answer.vote_count ||
-                            0
-                        )}票
+                        👍 ${Number(answer.vote_count || 0)}票
                       </div>
 
                     </div>
@@ -1066,9 +904,17 @@ function result() {
 
         <button
           class="btn secondary full"
-          onclick="leaveRoom()"
+          onclick="backHome()"
         >
           ホームへ戻る
+        </button>
+
+        <button
+          class="btn secondary full"
+          onclick="leaveRoom()"
+          style="margin-top:12px"
+        >
+          このルームから退出
         </button>
 
       </div>
@@ -1078,139 +924,90 @@ function result() {
 }
 
 async function create() {
-  if (state.loading) {
-    return;
-  }
+  if (state.loading) return;
 
   const button =
-    document.getElementById(
-      "createButton"
-    );
+    document.getElementById("createButton");
 
   const err =
-    document.getElementById(
-      "err"
-    );
+    document.getElementById("err");
 
   const customQuestion =
     document
-      .getElementById(
-        "customQuestion"
-      )
+      .getElementById("customQuestion")
       .value
       .trim();
 
   const durationSeconds =
     Number(
-      document.getElementById(
-        "duration"
-      ).value
+      document.getElementById("duration").value
     );
 
   const maxAnswers =
     Number(
-      document.getElementById(
-        "maxAnswers"
-      ).value
+      document.getElementById("maxAnswers").value
     );
 
   state.loading = true;
 
   button.disabled = true;
-
-  button.textContent =
-    "作成中...";
-
+  button.textContent = "作成中...";
   err.innerHTML = "";
 
   try {
-    const data =
-      await api(
-        "/api/rooms",
-        {
-          method: "POST",
+    const data = await api("/api/rooms", {
+      method: "POST",
+      body: JSON.stringify({
+        question:
+          customQuestion || randomQuestion(),
+        durationSeconds,
+        maxAnswers,
+        playerName: "匿名"
+      })
+    });
 
-          body:
-            JSON.stringify({
-              question:
-                customQuestion ||
-                randomQuestion(),
-
-              durationSeconds,
-              maxAnswers,
-
-              playerName:
-                "匿名"
-            })
-        }
-      );
-
-    state.room =
-      data.room;
-
-    state.me =
-      data.player;
-
+    state.room = data.room;
+    state.me = data.player;
     state.answers = [];
     state.myVotes = {};
-    state.phase =
-      "answering";
-
-    state.votingDeadline =
-      null;
+    state.phase = "answering";
+    state.votingDeadline = null;
+    state.votingAnswerId = null;
+    state.reloading = false;
 
     saveSession();
 
-    state.screen =
-      "game";
+    state.screen = "game";
 
-    await refreshGame(
-      false
-    );
+    await refreshGame(false);
 
     render();
-
   } catch (error) {
     err.innerHTML = `
       <div class="error">
-        ${esc(
-          error.message
-        )}
+        ${esc(error.message)}
       </div>
     `;
 
-    button.disabled =
-      false;
-
-    button.textContent =
-      "ルームを作成";
-
+    button.disabled = false;
+    button.textContent = "ルームを作成";
   } finally {
-    state.loading =
-      false;
+    state.loading = false;
   }
 }
 
 async function join() {
-  if (state.loading) {
-    return;
-  }
+  if (state.loading) return;
 
   const button =
-    document.getElementById(
-      "joinButton"
-    );
+    document.getElementById("joinButton");
 
   const err =
-    document.getElementById(
-      "err"
-    );
+    document.getElementById("err");
 
   const code =
     document
-      .getElementById(
-        "code"
-      )
+      .getElementById("code")
       .value
       .trim()
       .toUpperCase();
@@ -1218,112 +1015,74 @@ async function join() {
   if (!code) {
     err.innerHTML = `
       <div class="error">
-        ルームコードを
-        入力してください。
+        ルームコードを入力してください。
       </div>
     `;
-
     return;
   }
 
   state.loading = true;
 
   button.disabled = true;
-
-  button.textContent =
-    "参加中...";
-
+  button.textContent = "参加中...";
   err.innerHTML = "";
 
   try {
-    const data =
-      await api(
-        "/api/join",
-        {
-          method: "POST",
+    const data = await api("/api/join", {
+      method: "POST",
+      body: JSON.stringify({
+        code,
+        name: "匿名"
+      })
+    });
 
-          body:
-            JSON.stringify({
-              code,
-              name: "匿名"
-            })
-        }
-      );
-
-    state.room =
-      data.room;
-
-    state.me =
-      data.player;
-
+    state.room = data.room;
+    state.me = data.player;
     state.answers = [];
     state.myVotes = {};
-    state.phase =
-      "answering";
-
-    state.votingDeadline =
-      null;
+    state.phase = "answering";
+    state.votingDeadline = null;
+    state.votingAnswerId = null;
+    state.reloading = false;
 
     saveSession();
 
-    state.screen =
-      "game";
+    state.screen = "game";
 
-    await refreshGame(
-      false
-    );
+    await refreshGame(false);
 
     render();
-
   } catch (error) {
     err.innerHTML = `
       <div class="error">
-        ${esc(
-          error.message
-        )}
+        ${esc(error.message)}
       </div>
     `;
 
-    button.disabled =
-      false;
-
-    button.textContent =
-      "参加する";
-
+    button.disabled = false;
+    button.textContent = "参加する";
   } finally {
-    state.loading =
-      false;
+    state.loading = false;
   }
 }
 
 async function submitAnswer() {
   if (
     state.loading ||
-    state.phase !==
-      "answering"
+    state.phase !== "answering"
   ) {
     return;
   }
 
   const input =
-    document.getElementById(
-      "answer"
-    );
+    document.getElementById("answer");
 
   const err =
-    document.getElementById(
-      "err"
-    );
+    document.getElementById("err");
 
-  if (
-    !input ||
-    !err
-  ) {
-    return;
-  }
+  if (!input || !err) return;
 
-  const text =
-    input.value.trim();
+  const text = input.value.trim();
 
   if (!text) {
     err.innerHTML = `
@@ -1331,143 +1090,88 @@ async function submitAnswer() {
         回答を入力してください。
       </div>
     `;
-
     return;
   }
 
-  state.loading =
-    true;
-
+  state.loading = true;
   err.innerHTML = "";
 
   try {
-    const data =
-      await api(
-        "/api/answers",
-        {
-          method: "POST",
-
-          body:
-            JSON.stringify({
-              roomId:
-                state.room.id,
-
-              playerId:
-                state.me.id,
-
-              text
-            })
-        }
-      );
+    const data = await api("/api/answers", {
+      method: "POST",
+      body: JSON.stringify({
+        roomId: state.room.id,
+        playerId: state.me.id,
+        text
+      })
+    });
 
     input.value = "";
 
-    if (
-      data.phase
-    ) {
-      state.phase =
-        data.phase;
+    if (data.phase) {
+      state.phase = data.phase;
     }
 
-    if (
-      data.votingDeadline
-    ) {
+    if (data.votingDeadline) {
       state.votingDeadline =
-        Number(
-          data.votingDeadline
-        );
+        Number(data.votingDeadline);
     }
 
-    await refreshGame(
-      false
-    );
+    await refreshGame(false);
 
     render();
-
   } catch (error) {
     err.innerHTML = `
       <div class="error">
-        ${esc(
-          error.message
-        )}
+        ${esc(error.message)}
       </div>
     `;
-
   } finally {
-    state.loading =
-      false;
+    state.loading = false;
   }
 }
 
-async function castVote(
-  answerId
-) {
+async function castVote(answerId) {
   if (
-    state.loading ||
-    state.phase !==
-      "voting"
+    state.phase !== "voting" ||
+    state.votingAnswerId
   ) {
     return;
   }
 
   const current =
-    Number(
-      state.myVotes[
-        answerId
-      ] || 0
-    );
+    Number(state.myVotes[answerId] || 0);
 
-  if (current >= 10) {
-    return;
-  }
+  if (current >= 10) return;
 
-  state.loading =
-    true;
+  state.votingAnswerId = answerId;
+
+  render();
 
   try {
-    const data =
-      await api(
-        "/api/votes",
-        {
-          method: "POST",
+    const data = await api("/api/votes", {
+      method: "POST",
+      body: JSON.stringify({
+        roomId: state.room.id,
+        answerId,
+        playerId: state.me.id
+      })
+    });
 
-          body:
-            JSON.stringify({
-              roomId:
-                state.room.id,
-
-              answerId,
-
-              playerId:
-                state.me.id
-            })
-        }
-      );
-
-    state.myVotes[
-      answerId
-    ] =
+    state.myVotes[answerId] =
       Number(
-        data.myVoteCount ||
-          current + 1
+        data.myVoteCount ??
+        current + 1
       );
-
-    render();
-
   } catch (error) {
-    alert(
-      error.message
-    );
-
+    alert(error.message);
   } finally {
-    state.loading =
-      false;
+    state.votingAnswerId = null;
+    render();
   }
 }
 
-async function refreshGame(
-  shouldRender = true
-) {
+async function refreshGame(shouldRender = true) {
   if (
     !state.room?.id ||
     !state.me?.id
@@ -1476,17 +1180,13 @@ async function refreshGame(
   }
 
   try {
-    const [
-      answersData,
-      votesData
-    ] =
+    const [answersData, votesData] =
       await Promise.all([
         api(
           `/api/answers?roomId=${encodeURIComponent(
             state.room.id
           )}`
         ),
-
         api(
           `/api/votes?roomId=${encodeURIComponent(
             state.room.id
@@ -1497,12 +1197,10 @@ async function refreshGame(
       ]);
 
     state.answers =
-      answersData.answers ||
-      [];
+      answersData.answers || [];
 
     state.myVotes =
-      votesData.myVotes ||
-      {};
+      votesData.myVotes || {};
 
     state.phase =
       answersData.phase ||
@@ -1510,34 +1208,23 @@ async function refreshGame(
       "answering";
 
     state.votingDeadline =
-      answersData
-        .votingDeadline ||
-      votesData
-        .votingDeadline ||
+      answersData.votingDeadline ||
+      votesData.votingDeadline ||
       null;
 
-    if (
-      state.phase ===
-      "finished"
-    ) {
-      state.screen =
-        "result";
-
+    if (state.phase === "finished") {
+      state.screen = "result";
       stopRefresh();
       stopTick();
     } else {
-      state.screen =
-        "game";
+      state.screen = "game";
     }
 
     if (shouldRender) {
       render();
     }
-
   } catch (error) {
-    console.error(
-      error
-    );
+    console.error(error);
   }
 }
 
@@ -1548,29 +1235,21 @@ async function restoreSession() {
   }
 
   try {
-    const data =
-      await api(
-        `/api/rooms?code=${encodeURIComponent(
-          state.room.code
-        )}`
-      );
-
-    state.room =
-      data.room;
-
-    state.screen =
-      "game";
-
-    await refreshGame(
-      false
+    const data = await api(
+      `/api/rooms?code=${encodeURIComponent(
+        state.room.code
+      )}`
     );
+
+    state.room = data.room;
+    state.screen = "game";
+    state.reloading = false;
+
+    await refreshGame(false);
 
     saveSession();
-
   } catch (error) {
-    console.error(
-      error
-    );
+    console.error(error);
 
     clearSession();
 
@@ -1578,97 +1257,127 @@ async function restoreSession() {
     state.me = null;
     state.answers = [];
     state.myVotes = {};
-    state.phase =
-      "answering";
-
-    state.votingDeadline =
-      null;
-
-    state.screen =
-      "home";
+    state.phase = "answering";
+    state.votingDeadline = null;
+    state.votingAnswerId = null;
+    state.reloading = false;
+    state.screen = "home";
   }
 
   render();
 }
 
-async function endGameEarly() {
+async function endAnsweringEarly() {
   if (
     !state.room ||
     !state.me ||
-    state.phase !==
-      "answering"
+    state.phase !== "answering"
   ) {
     return;
   }
 
   if (
-    state.room
-      .host_player_id !==
+    state.room.host_player_id !==
     state.me.id
   ) {
-    alert(
-      "ルーム作成者だけが操作できます。"
-    );
-
+    alert("ルーム作成者だけが操作できます。");
     return;
   }
 
-  const ok =
-    confirm(
-      "回答受付を終了して投票タイムに移りますか？"
-    );
+  const ok = confirm(
+    "回答受付を終了して投票タイムに移りますか？"
+  );
 
-  if (!ok) {
+  if (!ok || state.loading) {
     return;
   }
 
-  if (state.loading) {
-    return;
-  }
-
-  state.loading =
-    true;
+  state.loading = true;
 
   try {
-    const data =
-      await api(
-        "/api/end",
-        {
-          method: "POST",
+    const data = await api("/api/end", {
+      method: "POST",
+      body: JSON.stringify({
+        roomId: state.room.id,
+        playerId: state.me.id
+      })
+    });
 
-          body:
-            JSON.stringify({
-              roomId:
-                state.room.id,
+    state.phase =
+      data.phase || "voting";
 
-              playerId:
-                state.me.id
-            })
-        }
-      );
+    state.votingDeadline =
+      data.votingDeadline || null;
 
-    state.room.deadline =
-      Number(
-        data.deadline
-      );
-
-    saveSession();
-
-    await refreshGame(
-      false
-    );
+    await refreshGame(false);
 
     render();
-
   } catch (error) {
     alert(
       error.message ||
-        "終了処理に失敗しました。"
+      "終了処理に失敗しました。"
     );
-
   } finally {
-    state.loading =
-      false;
+    state.loading = false;
+  }
+}
+
+async function endVotingEarly() {
+  if (
+    !state.room ||
+    !state.me ||
+    state.phase !== "voting"
+  ) {
+    return;
+  }
+
+  if (
+    state.room.host_player_id !==
+    state.me.id
+  ) {
+    alert("ルーム作成者だけが操作できます。");
+    return;
+  }
+
+  const ok = confirm(
+    "投票を終了して結果発表に移りますか？"
+  );
+
+  if (!ok || state.loading) {
+    return;
+  }
+
+  state.loading = true;
+
+  try {
+    const data = await api("/api/end", {
+      method: "POST",
+      body: JSON.stringify({
+        roomId: state.room.id,
+        playerId: state.me.id
+      })
+    });
+
+    state.phase =
+      data.phase || "finished";
+
+    state.votingDeadline =
+      data.votingDeadline || state.votingDeadline;
+
+    /*
+      終了後にanswers APIを再取得して
+      vote_count付きTOP5を取得する。
+    */
+    await refreshGame(false);
+
+    render();
+  } catch (error) {
+    alert(
+      error.message ||
+      "投票終了処理に失敗しました。"
+    );
+  } finally {
+    state.loading = false;
   }
 }
 
@@ -1682,14 +1391,11 @@ function leaveRoom() {
   state.me = null;
   state.answers = [];
   state.myVotes = {};
-  state.phase =
-    "answering";
-
-  state.votingDeadline =
-    null;
-
-  state.screen =
-    "home";
+  state.phase = "answering";
+  state.votingDeadline = null;
+  state.votingAnswerId = null;
+  state.reloading = false;
+  state.screen = "home";
 
   render();
 }
@@ -1698,33 +1404,26 @@ function tickAnswering() {
   stopTick();
 
   const el =
-    document.getElementById(
-      "timer"
-    );
+    document.getElementById("timer");
 
   if (
     !el ||
     !state.room ||
-    state.phase !==
-      "answering"
+    state.phase !== "answering"
   ) {
     return;
   }
 
-  const left =
-    Math.max(
-      0,
-      Number(
-        state.room.deadline
-      ) -
-        Date.now()
-    );
+  const left = Math.max(
+    0,
+    Number(state.room.deadline) -
+      Date.now()
+  );
 
-  el.textContent =
-    fmt(left);
+  el.textContent = fmt(left);
 
   if (left <= 0) {
-    refreshGame(true);
+    reloadAtDeadline();
     return;
   }
 
@@ -1739,33 +1438,25 @@ function tickVoting() {
   stopTick();
 
   const el =
-    document.getElementById(
-      "timer"
-    );
+    document.getElementById("timer");
 
   if (
     !el ||
-    state.phase !==
-      "voting"
+    state.phase !== "voting"
   ) {
     return;
   }
 
-  const left =
-    Math.max(
-      0,
-      Number(
-        state.votingDeadline ||
-          0
-      ) -
-        Date.now()
-    );
+  const left = Math.max(
+    0,
+    Number(state.votingDeadline || 0) -
+      Date.now()
+  );
 
-  el.textContent =
-    fmt(left);
+  el.textContent = fmt(left);
 
   if (left <= 0) {
-    refreshGame(true);
+    reloadAtDeadline();
     return;
   }
 
