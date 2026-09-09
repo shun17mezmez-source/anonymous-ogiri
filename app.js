@@ -140,51 +140,31 @@ const state = {
   reloading: false
 };
 
-const app =
-  document.querySelector("#app");
+const app = document.querySelector("#app");
 
 const esc = (s) =>
-  String(s).replace(
-    /[&<>"']/g,
-    (c) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;"
-    }[c])
-  );
+  String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[c]));
 
 const randomQuestion = () =>
-  QUESTIONS[
-    Math.floor(
-      Math.random() *
-        QUESTIONS.length
-    )
-  ];
+  QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
 
 const fmt = (ms) => {
-  let s =
-    Math.max(
-      0,
-      Math.ceil(ms / 1000)
-    );
+  let s = Math.max(0, Math.ceil(ms / 1000));
 
-  const d =
-    Math.floor(s / 86400);
-
+  const d = Math.floor(s / 86400);
   s %= 86400;
 
-  const h =
-    Math.floor(s / 3600);
-
+  const h = Math.floor(s / 3600);
   s %= 3600;
 
-  const m =
-    Math.floor(s / 60);
-
-  const r =
-    s % 60;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
 
   if (d > 0) {
     return `${d}日 ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -193,32 +173,23 @@ const fmt = (ms) => {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
 };
 
-async function api(
-  url,
-  options = {}
-) {
-  const response =
-    await fetch(url, {
-      ...options,
-      headers: {
-        "Content-Type":
-          "application/json",
-        ...(options.headers || {})
-      }
-    });
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
 
   let data = {};
 
   try {
-    data =
-      await response.json();
+    data = await response.json();
   } catch {}
 
   if (!response.ok) {
-    throw new Error(
-      data.error ||
-        "通信に失敗しました。"
-    );
+    throw new Error(data.error || "通信に失敗しました。");
   }
 
   return data;
@@ -235,37 +206,23 @@ function saveSession() {
 }
 
 function clearSession() {
-  localStorage.removeItem(
-    "anonymousOgiriSession"
-  );
+  localStorage.removeItem("anonymousOgiriSession");
 }
 
 function loadSession() {
   try {
-    const raw =
-      localStorage.getItem(
-        "anonymousOgiriSession"
-      );
+    const raw = localStorage.getItem("anonymousOgiriSession");
 
-    if (!raw) {
+    if (!raw) return false;
+
+    const data = JSON.parse(raw);
+
+    if (!data.room?.code || !data.me?.id) {
       return false;
     }
 
-    const data =
-      JSON.parse(raw);
-
-    if (
-      !data.room?.code ||
-      !data.me?.id
-    ) {
-      return false;
-    }
-
-    state.room =
-      data.room;
-
-    state.me =
-      data.me;
+    state.room = data.room;
+    state.me = data.me;
 
     return true;
   } catch {
@@ -275,10 +232,7 @@ function loadSession() {
 
 function stopRefresh() {
   if (state.refreshTimer) {
-    clearInterval(
-      state.refreshTimer
-    );
-
+    clearInterval(state.refreshTimer);
     state.refreshTimer = null;
   }
 }
@@ -286,30 +240,22 @@ function stopRefresh() {
 function startRefresh() {
   stopRefresh();
 
-  state.refreshTimer =
-    setInterval(() => {
-      if (
-        state.screen === "game"
-      ) {
-        refreshGame(false);
-      }
-    }, 3000);
+  state.refreshTimer = setInterval(() => {
+    if (state.screen === "game") {
+      refreshGame(false);
+    }
+  }, 3000);
 }
 
 function stopTick() {
   if (state.tickTimer) {
-    clearTimeout(
-      state.tickTimer
-    );
-
+    clearTimeout(state.tickTimer);
     state.tickTimer = null;
   }
 }
 
 function reloadAtDeadline() {
-  if (state.reloading) {
-    return;
-  }
+  if (state.reloading) return;
 
   state.reloading = true;
 
@@ -324,7 +270,6 @@ function go(screen) {
   stopTick();
 
   state.screen = screen;
-
   render();
 }
 
@@ -333,15 +278,11 @@ function backHome() {
   stopTick();
 
   state.screen = "home";
-
   render();
 }
 
 async function returnToRoom() {
-  if (
-    !state.room?.id ||
-    !state.me?.id
-  ) {
+  if (!state.room?.id || !state.me?.id) {
     return;
   }
 
@@ -355,25 +296,15 @@ async function returnToRoom() {
 function render() {
   stopTick();
 
-  if (
-    state.screen === "home"
-  ) {
+  if (state.screen === "home") {
     home();
-  } else if (
-    state.screen === "create"
-  ) {
+  } else if (state.screen === "create") {
     createRoom();
-  } else if (
-    state.screen === "join"
-  ) {
+  } else if (state.screen === "join") {
     joinRoom();
-  } else if (
-    state.screen === "game"
-  ) {
+  } else if (state.screen === "game") {
     game();
-  } else if (
-    state.screen === "result"
-  ) {
+  } else if (state.screen === "result") {
     result();
   }
 }
@@ -381,11 +312,10 @@ function render() {
 function home() {
   stopRefresh();
 
-  const hasRoom =
-    Boolean(
-      state.room?.id &&
-      state.me?.id
-    );
+  const hasRoom = Boolean(
+    state.room?.id &&
+    state.me?.id
+  );
 
   app.innerHTML = `
     <div class="wrap">
@@ -497,32 +427,12 @@ function createRoom() {
           id="duration"
           class="input"
         >
-          <option value="3600">
-            1時間
-          </option>
-
-          <option value="21600">
-            6時間
-          </option>
-
-          <option value="43200">
-            12時間
-          </option>
-
-          <option value="86400">
-            1日
-          </option>
-
-          <option value="259200">
-            3日
-          </option>
-
-          <option
-            value="432000"
-            selected
-          >
-            5日
-          </option>
+          <option value="3600">1時間</option>
+          <option value="21600">6時間</option>
+          <option value="43200">12時間</option>
+          <option value="86400">1日</option>
+          <option value="259200">3日</option>
+          <option value="432000" selected>5日</option>
         </select>
 
         <div class="label">
@@ -533,24 +443,10 @@ function createRoom() {
           id="maxAnswers"
           class="input"
         >
-          <option value="1">
-            1
-          </option>
-
-          <option value="2">
-            2
-          </option>
-
-          <option value="3">
-            3
-          </option>
-
-          <option
-            value="0"
-            selected
-          >
-            無制限
-          </option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="0" selected>無制限</option>
         </select>
 
         <button
@@ -619,39 +515,28 @@ function joinRoom() {
 }
 
 function game() {
-  if (
-    !state.room ||
-    !state.me
-  ) {
+  if (!state.room || !state.me) {
     go("home");
     return;
   }
 
-  if (
-    state.phase === "finished"
-  ) {
-    state.screen =
-      "result";
-
+  if (state.phase === "finished") {
+    state.screen = "result";
     render();
-
     return;
   }
 
   const mine =
     state.answers.filter(
       (answer) =>
-        answer.player_id ===
-        state.me.id
+        answer.player_id === state.me.id
     );
 
   const isHost =
     state.room.host_player_id ===
     state.me.id;
 
-  if (
-    state.phase === "voting"
-  ) {
+  if (state.phase === "voting") {
     votingScreen(isHost);
     return;
   }
@@ -666,18 +551,14 @@ function answeringScreen(
   mine,
   isHost
 ) {
-  const left =
-    Math.max(
-      0,
-      Number(
-        state.room.deadline
-      ) - Date.now()
-    );
+  const left = Math.max(
+    0,
+    Number(state.room.deadline) -
+      Date.now()
+  );
 
   const maxAnswers =
-    Number(
-      state.room.max_answers
-    );
+    Number(state.room.max_answers);
 
   const unlimited =
     maxAnswers === 0;
@@ -792,9 +673,7 @@ function answeringScreen(
         ${
           state.answers.length
             ? state.answers
-                .map(
-                  interactiveAnswerHTML
-                )
+                .map(interactiveAnswerHTML)
                 .join("")
             : `
               <p class="muted">
@@ -812,16 +691,13 @@ function answeringScreen(
   tickAnswering();
 }
 
-function votingScreen(
-  isHost
-) {
-  const left =
-    Math.max(
-      0,
-      Number(
-        state.votingDeadline || 0
-      ) - Date.now()
-    );
+function votingScreen(isHost) {
+  const left = Math.max(
+    0,
+    Number(
+      state.votingDeadline || 0
+    ) - Date.now()
+  );
 
   app.innerHTML = `
     <div class="wrap">
@@ -858,7 +734,6 @@ function votingScreen(
 
         <div class="notice">
           回答期間中につけた👍もそのまま引き継がれます。
-          総👍数は結果発表まで非公開です。
         </div>
 
         ${
@@ -894,9 +769,7 @@ function votingScreen(
         ${
           state.answers.length
             ? state.answers
-                .map(
-                  interactiveAnswerHTML
-                )
+                .map(interactiveAnswerHTML)
                 .join("")
             : `
               <p class="muted">
@@ -914,9 +787,7 @@ function votingScreen(
   tickVoting();
 }
 
-function interactiveAnswerHTML(
-  answer
-) {
+function interactiveAnswerHTML(answer) {
   const mine =
     answer.player_id ===
     state.me.id;
@@ -1062,10 +933,6 @@ function result() {
                         ${esc(answer.text)}
                       </div>
 
-                      <div class="answerMeta">
-                        👍 ${Number(answer.vote_count || 0)}票
-                      </div>
-
                     </div>
                   `
                 )
@@ -1138,10 +1005,7 @@ async function create() {
   state.loading = true;
 
   button.disabled = true;
-
-  button.textContent =
-    "作成中...";
-
+  button.textContent = "作成中...";
   err.innerHTML = "";
 
   try {
@@ -1158,7 +1022,6 @@ async function create() {
                 randomQuestion(),
 
               durationSeconds,
-
               maxAnswers
             })
         }
@@ -1171,29 +1034,17 @@ async function create() {
       data.player;
 
     state.answers = [];
-
     state.myVotes = {};
-
-    state.phase =
-      "answering";
-
-    state.votingDeadline =
-      null;
-
-    state.votingAnswerId =
-      null;
-
-    state.reloading =
-      false;
+    state.phase = "answering";
+    state.votingDeadline = null;
+    state.votingAnswerId = null;
+    state.reloading = false;
 
     saveSession();
 
-    state.screen =
-      "game";
+    state.screen = "game";
 
-    await refreshGame(
-      false
-    );
+    await refreshGame(false);
 
     render();
   } catch (error) {
@@ -1204,7 +1055,6 @@ async function create() {
     `;
 
     button.disabled = false;
-
     button.textContent =
       "ルームを作成";
   } finally {
@@ -1247,10 +1097,8 @@ async function join() {
   state.loading = true;
 
   button.disabled = true;
-
   button.textContent =
     "参加中...";
-
   err.innerHTML = "";
 
   try {
@@ -1275,29 +1123,17 @@ async function join() {
       data.player;
 
     state.answers = [];
-
     state.myVotes = {};
-
-    state.phase =
-      "answering";
-
-    state.votingDeadline =
-      null;
-
-    state.votingAnswerId =
-      null;
-
-    state.reloading =
-      false;
+    state.phase = "answering";
+    state.votingDeadline = null;
+    state.votingAnswerId = null;
+    state.reloading = false;
 
     saveSession();
 
-    state.screen =
-      "game";
+    state.screen = "game";
 
-    await refreshGame(
-      false
-    );
+    await refreshGame(false);
 
     render();
   } catch (error) {
@@ -1308,7 +1144,6 @@ async function join() {
     `;
 
     button.disabled = false;
-
     button.textContent =
       "参加する";
   } finally {
@@ -1319,8 +1154,7 @@ async function join() {
 async function submitAnswer() {
   if (
     state.loading ||
-    state.phase !==
-      "answering"
+    state.phase !== "answering"
   ) {
     return;
   }
@@ -1356,7 +1190,6 @@ async function submitAnswer() {
   }
 
   state.loading = true;
-
   err.innerHTML = "";
 
   try {
@@ -1380,9 +1213,7 @@ async function submitAnswer() {
 
     input.value = "";
 
-    await refreshGame(
-      false
-    );
+    await refreshGame(false);
 
     render();
   } catch (error) {
@@ -1451,9 +1282,7 @@ async function castVote(
           current + 1
       );
   } catch (error) {
-    alert(
-      error.message
-    );
+    alert(error.message);
   } finally {
     state.votingAnswerId =
       null;
@@ -1526,11 +1355,6 @@ async function refreshGame(
         "game";
     }
 
-    /*
-      他のプレイヤー側で
-      フェーズが変わった場合は
-      自動的に画面も切り替える。
-    */
     const phaseChanged =
       previousPhase !==
       state.phase;
@@ -1569,9 +1393,7 @@ async function restoreSession() {
     state.reloading =
       false;
 
-    await refreshGame(
-      false
-    );
+    await refreshGame(false);
 
     saveSession();
   } catch (error) {
@@ -1580,27 +1402,14 @@ async function restoreSession() {
     clearSession();
 
     state.room = null;
-
     state.me = null;
-
     state.answers = [];
-
     state.myVotes = {};
-
-    state.phase =
-      "answering";
-
-    state.votingDeadline =
-      null;
-
-    state.votingAnswerId =
-      null;
-
-    state.reloading =
-      false;
-
-    state.screen =
-      "home";
+    state.phase = "answering";
+    state.votingDeadline = null;
+    state.votingAnswerId = null;
+    state.reloading = false;
+    state.screen = "home";
   }
 
   render();
@@ -1667,9 +1476,7 @@ async function endAnsweringEarly() {
       data.votingDeadline ||
       null;
 
-    await refreshGame(
-      false
-    );
+    await refreshGame(false);
 
     render();
   } catch (error) {
@@ -1743,9 +1550,7 @@ async function endVotingEarly() {
       data.votingDeadline ||
       state.votingDeadline;
 
-    await refreshGame(
-      false
-    );
+    await refreshGame(false);
 
     render();
   } catch (error) {
@@ -1768,16 +1573,11 @@ function leaveRoom() {
   state.me = null;
   state.answers = [];
   state.myVotes = {};
-  state.phase =
-    "answering";
-  state.votingDeadline =
-    null;
-  state.votingAnswerId =
-    null;
-  state.reloading =
-    false;
-  state.screen =
-    "home";
+  state.phase = "answering";
+  state.votingDeadline = null;
+  state.votingAnswerId = null;
+  state.reloading = false;
+  state.screen = "home";
 
   render();
 }
