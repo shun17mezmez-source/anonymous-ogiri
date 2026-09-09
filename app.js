@@ -41,6 +41,7 @@ const randomQuestion = () =>
 
 const fmt = (ms) => {
   let s = Math.max(0, Math.ceil(ms / 1000));
+
   const d = Math.floor(s / 86400);
   s %= 86400;
 
@@ -102,7 +103,10 @@ function clearSession() {
 function loadSession() {
   try {
     const raw = localStorage.getItem("anonymousOgiriSession");
-    if (!raw) return false;
+
+    if (!raw) {
+      return false;
+    }
 
     const data = JSON.parse(raw);
 
@@ -143,19 +147,32 @@ function go(screen) {
 }
 
 function render() {
-  if (state.screen === "home") home();
-  else if (state.screen === "create") createRoom();
-  else if (state.screen === "join") joinRoom();
-  else if (state.screen === "game") game();
-  else if (state.screen === "result") result();
+  if (state.screen === "home") {
+    home();
+  } else if (state.screen === "create") {
+    createRoom();
+  } else if (state.screen === "join") {
+    joinRoom();
+  } else if (state.screen === "game") {
+    game();
+  } else if (state.screen === "result") {
+    result();
+  }
 }
 
 function home() {
   app.innerHTML = `
     <div class="wrap">
+
       <div class="card hero">
-        <div class="logo">🎤 匿名大喜利</div>
-        <p class="sub">匿名で答えて、みんなの1票を勝ち取ろう。</p>
+
+        <div class="logo">
+          🎤 匿名大喜利
+        </div>
+
+        <p class="sub">
+          匿名で答えて、みんなの1票を勝ち取ろう。
+        </p>
 
         <button
           class="btn full"
@@ -170,7 +187,9 @@ function home() {
         >
           ルームに参加する
         </button>
+
       </div>
+
     </div>
   `;
 }
@@ -180,7 +199,10 @@ function createRoom() {
     <div class="wrap">
 
       <div class="nav">
-        <strong>ルーム作成</strong>
+
+        <strong>
+          ルーム作成
+        </strong>
 
         <button
           class="btn secondary"
@@ -188,6 +210,7 @@ function createRoom() {
         >
           戻る
         </button>
+
       </div>
 
       <div class="card">
@@ -212,6 +235,7 @@ function createRoom() {
           id="duration"
           class="input"
         >
+
           <option value="3600">
             1時間
           </option>
@@ -232,12 +256,10 @@ function createRoom() {
             3日
           </option>
 
-          <option
-            value="432000"
-            selected
-          >
+          <option value="432000" selected>
             5日
           </option>
+
         </select>
 
         <div class="label">
@@ -248,6 +270,7 @@ function createRoom() {
           id="maxAnswers"
           class="input"
         >
+
           <option value="1">
             1
           </option>
@@ -256,12 +279,10 @@ function createRoom() {
             2
           </option>
 
-          <option
-            value="3"
-            selected
-          >
+          <option value="3" selected>
             3
           </option>
+
         </select>
 
         <button
@@ -275,6 +296,7 @@ function createRoom() {
         <div id="err"></div>
 
       </div>
+
     </div>
   `;
 }
@@ -284,7 +306,10 @@ function joinRoom() {
     <div class="wrap">
 
       <div class="nav">
-        <strong>ルーム参加</strong>
+
+        <strong>
+          ルーム参加
+        </strong>
 
         <button
           class="btn secondary"
@@ -292,6 +317,7 @@ function joinRoom() {
         >
           戻る
         </button>
+
       </div>
 
       <div class="card">
@@ -329,6 +355,7 @@ function joinRoom() {
         <div id="err"></div>
 
       </div>
+
     </div>
   `;
 }
@@ -351,18 +378,25 @@ function game() {
   }
 
   const mine = state.answers.filter(
-    (a) => a.player_id === state.me.id
+    (answer) => answer.player_id === state.me.id
   );
+
+  const isHost =
+    state.room.host_player_id === state.me.id;
 
   app.innerHTML = `
     <div class="wrap">
 
       <div class="nav">
-        <strong>開催中</strong>
+
+        <strong>
+          開催中
+        </strong>
 
         <span class="badge">
           ${mine.length}/${state.room.max_answers}回答
         </span>
+
       </div>
 
       <div class="card">
@@ -380,7 +414,9 @@ function game() {
 
         <div class="notice">
           ルームコード：
-          <strong>${esc(state.room.code)}</strong>
+          <strong>
+            ${esc(state.room.code)}
+          </strong>
         </div>
 
         <div class="notice">
@@ -393,16 +429,38 @@ function game() {
           class="input"
           maxlength="100"
           placeholder="回答を入力してください"
-          ${mine.length >= state.room.max_answers ? "disabled" : ""}
+          ${
+            mine.length >= state.room.max_answers
+              ? "disabled"
+              : ""
+          }
         >
 
         <button
           class="btn full"
           onclick="submitAnswer()"
-          ${mine.length >= state.room.max_answers ? "disabled" : ""}
+          ${
+            mine.length >= state.room.max_answers
+              ? "disabled"
+              : ""
+          }
         >
           回答する
         </button>
+
+        ${
+          isHost
+            ? `
+              <button
+                class="btn secondary full"
+                onclick="endGameEarly()"
+                style="margin-top:12px"
+              >
+                このお題を途中で終了する
+              </button>
+            `
+            : ""
+        }
 
         <div id="err"></div>
 
@@ -415,13 +473,17 @@ function game() {
         </div>
 
         <div id="answersArea">
+
           ${
             state.answers.length
-              ? state.answers
-                  .map(answerHTML)
-                  .join("")
-              : `<p class="muted">まだ回答がありません。</p>`
+              ? state.answers.map(answerHTML).join("")
+              : `
+                <p class="muted">
+                  まだ回答がありません。
+                </p>
+              `
           }
+
         </div>
 
       </div>
@@ -434,7 +496,8 @@ function game() {
 }
 
 function answerHTML(answer) {
-  const mine = answer.player_id === state.me.id;
+  const mine =
+    answer.player_id === state.me.id;
 
   const voted =
     state.myVote &&
@@ -450,7 +513,11 @@ function answerHTML(answer) {
       </div>
 
       <div class="answerMeta">
-        ${mine ? "あなたの回答" : "匿名プレイヤー"}
+        ${
+          mine
+            ? "あなたの回答"
+            : "匿名プレイヤー"
+        }
       </div>
 
       <div class="voteRow">
@@ -468,7 +535,11 @@ function answerHTML(answer) {
               : ""
           }
         >
-          ${voted ? "投票済み" : "投票する"}
+          ${
+            voted
+              ? "投票済み"
+              : "投票する"
+          }
         </button>
 
       </div>
@@ -534,14 +605,20 @@ function result() {
                       </div>
 
                       <div class="answerMeta">
-                        ❤️ ${Number(answer.vote_count || 0)}票
+                        ❤️ ${Number(
+                          answer.vote_count || 0
+                        )}票
                       </div>
 
                     </div>
                   `
                 )
                 .join("")
-            : `<p class="muted">回答がありません。</p>`
+            : `
+              <p class="muted">
+                回答がありません。
+              </p>
+            `
         }
 
         <button
@@ -558,20 +635,32 @@ function result() {
 }
 
 async function create() {
-  if (state.loading) return;
+  if (state.loading) {
+    return;
+  }
 
-  const button = document.getElementById("createButton");
-  const err = document.getElementById("err");
+  const button =
+    document.getElementById("createButton");
+
+  const err =
+    document.getElementById("err");
 
   const playerName =
-    document.getElementById("playerName").value.trim() ||
+    document
+      .getElementById("playerName")
+      .value
+      .trim() ||
     "プレイヤー1";
 
   const durationSeconds =
-    Number(document.getElementById("duration").value);
+    Number(
+      document.getElementById("duration").value
+    );
 
   const maxAnswers =
-    Number(document.getElementById("maxAnswers").value);
+    Number(
+      document.getElementById("maxAnswers").value
+    );
 
   state.loading = true;
 
@@ -581,18 +670,23 @@ async function create() {
   err.innerHTML = "";
 
   try {
-    const data = await api("/api/rooms", {
-      method: "POST",
-      body: JSON.stringify({
-        question: randomQuestion(),
-        durationSeconds,
-        maxAnswers,
-        playerName
-      })
-    });
+    const data = await api(
+      "/api/rooms",
+      {
+        method: "POST",
+
+        body: JSON.stringify({
+          question: randomQuestion(),
+          durationSeconds,
+          maxAnswers,
+          playerName
+        })
+      }
+    );
 
     state.room = data.room;
     state.me = data.player;
+
     state.answers = [];
     state.myVote = null;
 
@@ -600,9 +694,10 @@ async function create() {
 
     state.screen = "game";
 
+    await refreshGame(false);
+
     render();
 
-    await refreshGame(false);
   } catch (error) {
     err.innerHTML = `
       <div class="error">
@@ -612,16 +707,22 @@ async function create() {
 
     button.disabled = false;
     button.textContent = "ルームを作成";
+
   } finally {
     state.loading = false;
   }
 }
 
 async function join() {
-  if (state.loading) return;
+  if (state.loading) {
+    return;
+  }
 
-  const button = document.getElementById("joinButton");
-  const err = document.getElementById("err");
+  const button =
+    document.getElementById("joinButton");
+
+  const err =
+    document.getElementById("err");
 
   const code =
     document
@@ -643,6 +744,7 @@ async function join() {
         ルームコードを入力してください。
       </div>
     `;
+
     return;
   }
 
@@ -654,28 +756,35 @@ async function join() {
   err.innerHTML = "";
 
   try {
-    const data = await api("/api/join", {
-      method: "POST",
-      body: JSON.stringify({
-        code,
-        name: playerName
-      })
-    });
+    const data = await api(
+      "/api/join",
+      {
+        method: "POST",
+
+        body: JSON.stringify({
+          code,
+          name: playerName
+        })
+      }
+    );
 
     state.room = data.room;
     state.me = data.player;
+
     state.answers = [];
     state.myVote = null;
 
     saveSession();
 
-    state.screen = data.ended
-      ? "result"
-      : "game";
+    state.screen =
+      data.ended
+        ? "result"
+        : "game";
 
     await refreshGame(false);
 
     render();
+
   } catch (error) {
     err.innerHTML = `
       <div class="error">
@@ -685,16 +794,22 @@ async function join() {
 
     button.disabled = false;
     button.textContent = "参加する";
+
   } finally {
     state.loading = false;
   }
 }
 
 async function submitAnswer() {
-  if (state.loading) return;
+  if (state.loading) {
+    return;
+  }
 
-  const input = document.getElementById("answer");
-  const err = document.getElementById("err");
+  const input =
+    document.getElementById("answer");
+
+  const err =
+    document.getElementById("err");
 
   const text = input.value.trim();
 
@@ -704,31 +819,39 @@ async function submitAnswer() {
         回答を入力してください。
       </div>
     `;
+
     return;
   }
 
   state.loading = true;
+
   err.innerHTML = "";
 
   try {
-    await api("/api/answers", {
-      method: "POST",
-      body: JSON.stringify({
-        roomId: state.room.id,
-        playerId: state.me.id,
-        text
-      })
-    });
+    await api(
+      "/api/answers",
+      {
+        method: "POST",
+
+        body: JSON.stringify({
+          roomId: state.room.id,
+          playerId: state.me.id,
+          text
+        })
+      }
+    );
 
     input.value = "";
 
     await refreshGame();
+
   } catch (error) {
     err.innerHTML = `
       <div class="error">
         ${esc(error.message)}
       </div>
     `;
+
   } finally {
     state.loading = false;
   }
@@ -745,45 +868,58 @@ async function castVote(answerId) {
   state.loading = true;
 
   try {
-    await api("/api/votes", {
-      method: "POST",
-      body: JSON.stringify({
-        roomId: state.room.id,
-        answerId,
-        playerId: state.me.id
-      })
-    });
+    await api(
+      "/api/votes",
+      {
+        method: "POST",
+
+        body: JSON.stringify({
+          roomId: state.room.id,
+          answerId,
+          playerId: state.me.id
+        })
+      }
+    );
 
     await refreshGame();
+
   } catch (error) {
     alert(error.message);
+
   } finally {
     state.loading = false;
   }
 }
 
-async function refreshGame(shouldRender = true) {
-  if (!state.room?.id || !state.me?.id) {
+async function refreshGame(
+  shouldRender = true
+) {
+  if (
+    !state.room?.id ||
+    !state.me?.id
+  ) {
     return;
   }
 
   try {
-    const [answersData, voteData] =
-      await Promise.all([
-        api(
-          `/api/answers?roomId=${encodeURIComponent(
-            state.room.id
-          )}`
-        ),
+    const [
+      answersData,
+      voteData
+    ] = await Promise.all([
+      api(
+        `/api/answers?roomId=${encodeURIComponent(
+          state.room.id
+        )}`
+      ),
 
-        api(
-          `/api/votes?roomId=${encodeURIComponent(
-            state.room.id
-          )}&playerId=${encodeURIComponent(
-            state.me.id
-          )}`
-        )
-      ]);
+      api(
+        `/api/votes?roomId=${encodeURIComponent(
+          state.room.id
+        )}&playerId=${encodeURIComponent(
+          state.me.id
+        )}`
+      )
+    ]);
 
     state.answers =
       answersData.answers || [];
@@ -793,6 +929,7 @@ async function refreshGame(shouldRender = true) {
 
     if (answersData.ended) {
       state.screen = "result";
+
       stopRefresh();
 
       if (shouldRender) {
@@ -808,6 +945,7 @@ async function refreshGame(shouldRender = true) {
     ) {
       render();
     }
+
   } catch (error) {
     console.error(error);
   }
@@ -828,22 +966,24 @@ async function restoreSession() {
 
     state.room = data.room;
 
-    const [answersData, voteData] =
-      await Promise.all([
-        api(
-          `/api/answers?roomId=${encodeURIComponent(
-            state.room.id
-          )}`
-        ),
+    const [
+      answersData,
+      voteData
+    ] = await Promise.all([
+      api(
+        `/api/answers?roomId=${encodeURIComponent(
+          state.room.id
+        )}`
+      ),
 
-        api(
-          `/api/votes?roomId=${encodeURIComponent(
-            state.room.id
-          )}&playerId=${encodeURIComponent(
-            state.me.id
-          )}`
-        )
-      ]);
+      api(
+        `/api/votes?roomId=${encodeURIComponent(
+          state.room.id
+        )}&playerId=${encodeURIComponent(
+          state.me.id
+        )}`
+      )
+    ]);
 
     state.answers =
       answersData.answers || [];
@@ -859,6 +999,9 @@ async function restoreSession() {
     } else {
       state.screen = "game";
     }
+
+    saveSession();
+
   } catch (error) {
     console.error(error);
 
@@ -866,49 +1009,141 @@ async function restoreSession() {
 
     state.room = null;
     state.me = null;
+
     state.answers = [];
     state.myVote = null;
+
     state.screen = "home";
   }
 
   render();
 }
 
+async function endGameEarly() {
+  if (
+    !state.room ||
+    !state.me
+  ) {
+    return;
+  }
+
+  if (
+    state.room.host_player_id !==
+    state.me.id
+  ) {
+    alert(
+      "ルーム作成者だけが終了できます。"
+    );
+
+    return;
+  }
+
+  const ok = confirm(
+    "このお題を途中で終了しますか？\n\n終了すると回答・投票はできなくなります。"
+  );
+
+  if (!ok) {
+    return;
+  }
+
+  if (state.loading) {
+    return;
+  }
+
+  state.loading = true;
+
+  try {
+    const data = await api(
+      "/api/end",
+      {
+        method: "POST",
+
+        body: JSON.stringify({
+          roomId: state.room.id,
+          playerId: state.me.id
+        })
+      }
+    );
+
+    state.room.deadline =
+      data.deadline;
+
+    saveSession();
+
+    await refreshGame(false);
+
+    state.screen = "result";
+
+    stopRefresh();
+
+    render();
+
+  } catch (error) {
+    console.error(error);
+
+    alert(
+      error.message ||
+      "終了処理に失敗しました。"
+    );
+
+  } finally {
+    state.loading = false;
+  }
+}
+
 function leaveRoom() {
   stopRefresh();
+
   clearSession();
 
   state.room = null;
   state.me = null;
+
   state.answers = [];
   state.myVote = null;
+
   state.screen = "home";
 
   render();
 }
 
 function tick() {
-  const el = document.getElementById("timer");
+  const el =
+    document.getElementById("timer");
 
-  if (!el || !state.room) {
+  if (
+    !el ||
+    !state.room
+  ) {
     return;
   }
 
   const left = Math.max(
     0,
-    Number(state.room.deadline) - Date.now()
+    Number(state.room.deadline) -
+      Date.now()
   );
 
-  el.textContent = fmt(left);
+  el.textContent =
+    fmt(left);
 
   if (left <= 0) {
     state.screen = "result";
+
     stopRefresh();
-    refreshGame(false).finally(render);
+
+    refreshGame(false)
+      .finally(() => {
+        render();
+      });
+
     return;
   }
 
-  setTimeout(tick, 1000);
+  setTimeout(
+    tick,
+    1000
+  );
 }
 
 restoreSession();

@@ -1,4 +1,5 @@
 // functions/api/rooms.js
+// 今の rooms.js をこれに丸ごと置き換え
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -10,6 +11,7 @@ const json = (data, status = 200) =>
 
 function makeCode(length = 6) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
   return Array.from(
     { length },
     () => chars[Math.floor(Math.random() * chars.length)]
@@ -19,6 +21,7 @@ function makeCode(length = 6) {
 export async function onRequestGet(context) {
   try {
     const url = new URL(context.request.url);
+
     const code = (url.searchParams.get("code") || "")
       .trim()
       .toUpperCase();
@@ -35,7 +38,8 @@ export async function onRequestGet(context) {
         duration_seconds,
         deadline,
         max_answers,
-        created_at
+        created_at,
+        host_player_id
       FROM rooms
       WHERE code = ?
     `)
@@ -62,7 +66,11 @@ export async function onRequestGet(context) {
     });
   } catch (error) {
     console.error(error);
-    return json({ error: "ルーム情報の取得に失敗しました。" }, 500);
+
+    return json(
+      { error: "ルーム情報の取得に失敗しました。" },
+      500
+    );
   }
 }
 
@@ -71,9 +79,11 @@ export async function onRequestPost(context) {
     const body = await context.request.json();
 
     const question = String(body.question || "").trim();
+
     const playerName =
-      String(body.playerName || "プレイヤー").trim().slice(0, 30) ||
-      "プレイヤー";
+      String(body.playerName || "プレイヤー")
+        .trim()
+        .slice(0, 30) || "プレイヤー";
 
     const durationSeconds = Number(body.durationSeconds);
     const maxAnswers = Number(body.maxAnswers);
@@ -100,6 +110,7 @@ export async function onRequestPost(context) {
 
     const roomId = crypto.randomUUID();
     const playerId = crypto.randomUUID();
+
     const now = Date.now();
     const deadline = now + durationSeconds * 1000;
 
@@ -123,7 +134,10 @@ export async function onRequestPost(context) {
     }
 
     if (!code) {
-      return json({ error: "ルームコードの生成に失敗しました。" }, 500);
+      return json(
+        { error: "ルームコードの生成に失敗しました。" },
+        500
+      );
     }
 
     await context.env.DB.batch([
@@ -135,9 +149,10 @@ export async function onRequestPost(context) {
           duration_seconds,
           deadline,
           max_answers,
-          created_at
+          created_at,
+          host_player_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         roomId,
         code,
@@ -145,7 +160,8 @@ export async function onRequestPost(context) {
         durationSeconds,
         deadline,
         maxAnswers,
-        now
+        now,
+        playerId
       ),
 
       context.env.DB.prepare(`
@@ -174,7 +190,9 @@ export async function onRequestPost(context) {
           deadline,
           max_answers: maxAnswers,
           created_at: now,
+          host_player_id: playerId,
         },
+
         player: {
           id: playerId,
           name: playerName,
@@ -184,6 +202,10 @@ export async function onRequestPost(context) {
     );
   } catch (error) {
     console.error(error);
-    return json({ error: "ルーム作成に失敗しました。" }, 500);
+
+    return json(
+      { error: "ルーム作成に失敗しました。" },
+      500
+    );
   }
 }
